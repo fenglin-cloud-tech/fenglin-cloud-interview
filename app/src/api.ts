@@ -13,6 +13,7 @@ import type {
   JdMatchResult,
   FeedbackResult,
   ReportResult,
+  GrowthStats,
 } from './types';
 
 export class ApiError extends Error {
@@ -92,6 +93,8 @@ export const api = {
       activeJobId: number | null;
       aiConfigured: boolean;
     }>('/dashboard'),
+
+  growth: () => request<GrowthStats>('/stats/growth'),
 
   templates: () => request<{ templates: ResumeTemplate[] }>('/templates'),
 

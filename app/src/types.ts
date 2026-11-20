@@ -201,3 +201,39 @@ export interface JdAnalysisRecord {
   created_at: string;
   result: JdMatchResult;
 }
+
+export interface GrowthDims {
+  structure: number;
+  content: number;
+  expression: number;
+}
+
+export interface GrowthPoint {
+  id: number;
+  jobId: number | null;
+  jobTitle: string;
+  startedAt: string;
+  score: number;
+  dims: GrowthDims | null;
+}
+
+export interface GrowthRadarSide {
+  label: string;
+  n: number;
+  dims: GrowthDims;
+}
+
+export interface GrowthGroup {
+  key: string;
+  jobId: number | null;
+  label: string;
+  count: number;
+  points: GrowthPoint[];
+  radar: { early: GrowthRadarSide | null; recent: GrowthRadarSide | null };
+}
+
+export interface GrowthStats {
+  totalFinished: number;
+  groups: GrowthGroup[];
+  generatedAt: string;
+}

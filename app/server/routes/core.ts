@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, getSetting, nowIso, setSetting } from '../db.js';
+import { db, getSetting, nowIso, parseJson, setSetting } from '../db.js';
 import { TEMPLATES } from '../templates.js';
 import { buildDocx } from '../docx-export.js';
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
@@ -217,3 +217,130 @@ coreRouter.get(
     });
   }),
 );
+
+/* ---------------- 能力成长：只聚合既有评分，不新增表 ---------------- */
+
+interface GrowthDims {
+  structure: number;
+  content: number;
+  expression: number;
+}
+
+interface GrowthPoint {
+  id: number;
+  jobId: number | null;
+  jobTitle: string;
+  startedAt: string;
+  score: number;
+  dims: GrowthDims | null;
+}
+
+function meanDims(list: GrowthDims[]): GrowthDims | null {
+  if (!list.length) return null;
+  const sum = list.reduce(
+    (acc, d) => ({
+      structure: acc.structure + d.structure,
+      content: acc.content + d.content,
+      expression: acc.expression + d.expression,
+    }),
+    { structure: 0, content: 0, expression: 0 },
+  );
+  return {
+    structure: Math.round(sum.structure / list.length),
+    content: Math.round(sum.content / list.length),
+    expression: Math.round(sum.expression / list.length),
+  };
+}
+
+/**
+ * 三维对比口径：把该分组内带三维评分的面试按时间排序，前一半为「早期」、后一半为「近期」。
+ * 只有 1 场时不制造对比，只返回近期一侧。
+ */
+function radarOf(points: GrowthPoint[]) {
+  const withDims = points.filter((p) => p.dims) as (GrowthPoint & { dims: GrowthDims })[];
+  if (!withDims.length) return { early: null, recent: null };
+  if (withDims.length === 1) {
+    return {
+      early: null,
+      recent: { label: '最近 1 场', n: 1, dims: withDims[0].dims },
+    };
+  }
+  const half = Math.floor(withDims.length / 2);
+  const early = withDims.slice(0, half);
+  const recent = withDims.slice(half);
+  return {
+    early: { label: `前 ${early.length} 场`, n: early.length, dims: meanDims(early.map((p) => p.dims)) },
+    recent: { label: `最近 ${recent.length} 场`, n: recent.length, dims: meanDims(recent.map((p) => p.dims)) },
+  };
+}
+
+coreRouter.get('/stats/growth', (_req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT i.id, i.job_id, i.started_at, i.overall_score, j.title AS job_title
+       FROM interview i LEFT JOIN job j ON j.id = i.job_id
+       WHERE i.status = 'finished' AND i.overall_score IS NOT NULL
+       ORDER BY i.started_at ASC, i.id ASC`,
+    )
+    .all() as {
+    id: number;
+    job_id: number | null;
+    started_at: string;
+    overall_score: number;
+    job_title: string | null;
+  }[];
+
+  const turnRows = db
+    .prepare(
+      `SELECT t.interview_id, t.feedback_json FROM interview_turn t
+       JOIN interview i ON i.id = t.interview_id
+       WHERE i.status = 'finished' AND t.answer IS NOT NULL AND t.feedback_json IS NOT NULL`,
+    )
+    .all() as { interview_id: number; feedback_json: string }[];
+
+  const dimsByInterview = new Map<number, GrowthDims[]>();
+  for (const t of turnRows) {
+    const fb = parseJson<{ scores?: Partial<GrowthDims> } | null>(t.feedback_json, null);
+    const s = fb?.scores;
+    if (!s) continue;
+    const { structure, content, expression } = s;
+    if (typeof structure !== 'number' || typeof content !== 'number' || typeof expression !== 'number') continue;
+    const arr = dimsByInterview.get(t.interview_id) || [];
+    arr.push({ structure, content, expression });
+    dimsByInterview.set(t.interview_id, arr);
+  }
+
+  const points: GrowthPoint[] = rows.map((r) => ({
+    id: r.id,
+    jobId: r.job_id,
+    jobTitle: r.job_title || '',
+    startedAt: r.started_at,
+    score: Math.round(r.overall_score),
+    dims: meanDims(dimsByInterview.get(r.id) || []),
+  }));
+
+  const buckets = new Map<string, { jobId: number | null; label: string; points: GrowthPoint[] }>();
+  buckets.set('all', { jobId: null, label: '全部岗位', points: [...points] });
+  for (const p of points) {
+    const key = p.jobId ? `job-${p.jobId}` : 'nojob';
+    const bucket = buckets.get(key) || {
+      jobId: p.jobId,
+      label: p.jobId ? p.jobTitle || '未命名岗位' : '未关联岗位',
+      points: [],
+    };
+    bucket.points.push(p);
+    buckets.set(key, bucket);
+  }
+
+  const groups = [...buckets.entries()].map(([key, b]) => ({
+    key,
+    jobId: b.jobId,
+    label: b.label,
+    count: b.points.length,
+    points: b.points,
+    radar: radarOf(b.points),
+  }));
+  groups.sort((a, b) => (a.key === 'all' ? -1 : b.key === 'all' ? 1 : b.count - a.count));
+
+  res.json({ totalFinished: points.length, groups, generatedAt: nowIso() });
+});

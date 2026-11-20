@@ -195,14 +195,14 @@ export function reportPrompt(params: {
 ${lines}
 
 请出具报告：
-- overallScore：整场 0-100 的整数评分
+- overallScore：整场 0-100 的整数评分。必须以逐题得分的平均值为基准，再按轮次覆盖度与薄弱项微调，不同质量的场次必须拉开差距，禁止给出固定分数
 - roundScores：每一轮的得分与一句点评（轮次名用：自我介绍 / 专业能力 / 行为面试 / 反问环节，只包含实际发生的轮次）
 - weaknesses：3-5 条薄弱环节，要具体（如「讲项目时只说做了什么，没说结果数据」）
 - reviewPoints：4-6 个建议复习点，可执行（如「把项目 X 的 QPS 从多少提升到多少补进答案」）
 - summary：2-3 句总评与下一步建议
 
-严格按以下 JSON 输出：
-{ "overallScore": 74, "roundScores": [{"round":"自我介绍","score":80,"comment":"..."}], "weaknesses": ["..."], "reviewPoints": ["..."], "summary": "..." }`,
+严格按以下 JSON 输出（示例里的 0 只是占位，必须按实际问答质量重新计算，禁止照抄）：
+{ "overallScore": 0, "roundScores": [{"round":"自我介绍","score":0,"comment":"..."}], "weaknesses": ["..."], "reviewPoints": ["..."], "summary": "..." }`,
     },
   ];
 }

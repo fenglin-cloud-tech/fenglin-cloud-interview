@@ -4,6 +4,8 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import { ROUND_LABEL, formatDateTime } from '../lib/format';
 import { Button, Card, Chip, EmptyState, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
+import { GrowthPanel } from '../components/GrowthPanel';
+import type { GrowthStats } from '../types';
 
 interface Dash {
   counts: {
@@ -36,6 +38,7 @@ export function Home() {
   const [data, setData] = useState<Dash | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [growth, setGrowth] = useState<GrowthStats | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -48,6 +51,14 @@ export function Home() {
   };
 
   useEffect(load, []);
+
+  // 成长数据独立加载：即使失败也不影响训练台其它区域
+  useEffect(() => {
+    api
+      .growth()
+      .then(setGrowth)
+      .catch(() => setGrowth(null));
+  }, []);
 
   const counts = data?.counts;
   const checklist = [
@@ -133,6 +144,8 @@ export function Home() {
             <Stat label="题库沉淀" value={counts?.bank ?? 0} hint={`${counts?.weak ?? 0} 道标记为薄弱`} />
             <Stat label="复盘" value={counts?.reviews ?? 0} hint="可导出 Markdown / Word" />
           </div>
+
+          {growth && <GrowthPanel data={growth} activeJobId={data?.activeJobId ?? activeJob?.id ?? null} />}
 
           <div className="grid-2">
             <Card title="闭环清单" subtitle="按顺序点亮，任何一环没数据都会卡住下一步">
