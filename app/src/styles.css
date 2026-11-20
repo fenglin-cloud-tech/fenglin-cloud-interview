@@ -27,6 +27,8 @@
   --note-bg: #e9eff6;
   --note-line: #c1d2d6;
   --note-ink: #31464f;
+  /* 提示块的信号色：左边条 / 圆点 / 内嵌条统一取参考图竖条的 #2A6E7C */
+  --note-accent: #2a6e7c;
 
   /* 强调：云青 + 灰蓝链接 */
   --cyan: #2a6e7c;
@@ -1024,14 +1026,14 @@ select.input {
   background: var(--amber-soft);
 }
 
-/* 文字收敛为深墨后，用 4px 琥珀圆点保留「进行中/待办」的信号 */
+/* 文字收敛为深墨后，用 4px 提示信号色圆点保留「进行中/待办」的信号 */
 .chip-amber::before {
   content: '';
   flex: 0 0 4px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--amber);
+  background: var(--note-accent);
 }
 
 .chip-ink {
@@ -1318,7 +1320,7 @@ select.input {
 
 .callout {
   border: 1px solid var(--line-2);
-  border-left: 3px solid var(--blue);
+  border-left: 3px solid var(--note-accent);
   background: var(--blue-soft);
   padding: 10px 13px;
   font-size: 13px;
@@ -1329,7 +1331,7 @@ select.input {
 
 .callout-warn {
   border-color: var(--amber-line);
-  border-left-color: var(--amber);
+  border-left-color: var(--note-accent);
   background: var(--amber-soft);
   color: var(--note-ink);
 }
@@ -3355,7 +3357,7 @@ select.input {
 .score-dot.s2 {
   background: var(--amber-soft);
   color: var(--note-ink);
-  box-shadow: inset 2px 0 0 var(--amber);
+  box-shadow: inset 2px 0 0 var(--note-accent);
 }
 
 .score-dot.s3 {
@@ -3994,7 +3996,7 @@ select.input {
 
 .rating-input button.on {
   background: var(--amber-soft);
-  border-color: var(--amber);
+  border-color: var(--note-accent);
   color: var(--note-ink);
   font-weight: 700;
 }
@@ -4055,7 +4057,7 @@ select.input {
 }
 
 .bank-item.weak {
-  box-shadow: inset 2px 0 0 var(--amber);
+  box-shadow: inset 2px 0 0 var(--note-accent);
 }
 
 .bank-check {
