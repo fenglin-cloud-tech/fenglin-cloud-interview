@@ -3,7 +3,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { ReviewItem } from '../types';
 import { formatDateTime } from '../lib/format';
-import { downloadText, slugDate } from '../lib/download';
+import { downloadFrom, downloadText, openPrintView, slugDate } from '../lib/download';
 import {
   Button,
   Callout,
@@ -162,6 +162,24 @@ export function Reviews() {
         actions={
           <>
             <Button onClick={() => void exportAll()}>导出 Markdown</Button>
+            <Button
+              disabled={!items.length}
+              onClick={() => {
+                if (!items.length) return toast('还没有可导出的复盘', 'err');
+                downloadFrom('/api/reviews/export/docx');
+              }}
+            >
+              下载 Word
+            </Button>
+            <Button
+              disabled={!items.length}
+              onClick={() => {
+                if (!items.length) return toast('还没有可导出的复盘', 'err');
+                openPrintView('/print/reviews');
+              }}
+            >
+              打印 / 存为 PDF
+            </Button>
             <Button variant="ink" onClick={openCreate}>
               写一条复盘
             </Button>

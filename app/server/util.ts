@@ -32,3 +32,15 @@ export function idOf(req: Request): number {
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, '无效的 ID');
   return id;
 }
+
+/** 以附件形式返回 docx；中文文件名走 RFC 5987 的 filename*，不依赖响应头编码。 */
+export function sendDocx(res: Response, filename: string, data: Buffer): void {
+  const safe = filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_') || 'export.docx';
+  const encoded = encodeURIComponent(filename).replace(/['()*]/g, (c) =>
+    `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="${safe}"; filename*=UTF-8''${encoded}`);
+  res.setHeader('Content-Length', String(data.length));
+  res.send(data);
+}

@@ -14,6 +14,8 @@ import { Reviews } from './pages/Reviews';
 import { Bank } from './pages/Bank';
 import { ProfilePage } from './pages/ProfilePage';
 import { Privacy } from './pages/Privacy';
+import { PrintResume } from './pages/PrintResume';
+import { PrintReviews } from './pages/PrintReviews';
 import { NotFound } from './pages/NotFound';
 
 export function App() {
@@ -21,6 +23,8 @@ export function App() {
     <AppProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="print/resume/:id" element={<PrintResume />} />
+          <Route path="print/reviews" element={<PrintReviews />} />
           <Route element={<Layout />}>
             <Route index element={<Home />} />
             <Route path="templates" element={<Templates />} />

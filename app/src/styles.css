@@ -3583,3 +3583,144 @@ code {
     font-size: 11.5px;
   }
 }
+
+/* ---------------- 打印视图（简历 / 复盘，A4） ---------------- */
+.print-page {
+  min-height: 100vh;
+  background: #e6dfd0;
+  padding: 24px 12px 56px;
+}
+
+.print-actions {
+  width: 210mm;
+  max-width: 100%;
+  margin: 0 auto 12px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.print-actions .btn {
+  text-decoration: none;
+}
+
+.print-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 18mm 16mm;
+  background: #fffdf8;
+  color: #1f1c17;
+  box-shadow: 0 18px 48px rgba(40, 32, 20, 0.18);
+}
+
+.print-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #8a8172;
+  border-bottom: 1px solid #ddd3c2;
+  padding-bottom: 6px;
+  margin-bottom: 16px;
+}
+
+.print-muted {
+  color: #8a8172;
+}
+
+.print-error {
+  color: #b23a2e;
+}
+
+/* 防止板块与表格行被分页切断 */
+.print-body h2,
+.print-body h3,
+.print-body h4 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.print-body p,
+.print-body li,
+.print-body table,
+.print-body tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.print-body th,
+.print-body td {
+  border: 1px solid #d8cfbe;
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.print-body th {
+  background: #f4efe4;
+}
+
+.print-body img {
+  max-width: 100%;
+}
+
+/* Markdown 表格（打印视图与导出预览共用） */
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12.5px;
+}
+
+.md-table th,
+.md-table td {
+  border: 1px solid #d8cfbe;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  background: #f4efe4;
+  font-weight: 600;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  .print-page {
+    background: #fff;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .print-actions {
+    display: none !important;
+  }
+
+  .print-sheet {
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+}

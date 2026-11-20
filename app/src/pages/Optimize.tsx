@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { JdAnalysisRecord, JdMatchResult, LlmMeta, SuggestionResult } from '../types';
 import { diffLines } from '../lib/diff';
-import { downloadText, slugDate } from '../lib/download';
+import { downloadFrom, downloadText, openPrintView, slugDate } from '../lib/download';
 import { formatDateTime } from '../lib/format';
 import { renderMarkdown } from '../lib/markdown';
 import {
@@ -552,23 +552,38 @@ export function Optimize() {
         <div className="stack">
           <Card
             title="导出简历"
-            subtitle="当前支持 Markdown（可直接粘贴到邮件、Notion、飞书文档）"
+            subtitle="Markdown 便于复制到任意文档；Word 由服务端生成；PDF 走打印视图由浏览器另存"
             extra={
-              <div className="row gap-8">
+              <div className="row gap-8 wrap">
                 <CopyButton text={draft || resumeText} label="复制全文" />
                 <Button
                   size="sm"
-                  variant="ink"
                   onClick={() => downloadText(`简历-${(jobTitle || '通用').slice(0, 20)}-${slugDate()}.md`, draft || resumeText)}
                 >
                   下载 .md
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ink"
+                  disabled={!resumeId}
+                  onClick={() => resumeId && downloadFrom(`/api/resumes/${resumeId}/docx`)}
+                >
+                  下载 Word（.docx）
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!resumeId}
+                  onClick={() => resumeId && openPrintView(`/print/resume/${resumeId}`)}
+                >
+                  打印 / 存为 PDF
                 </Button>
               </div>
             }
           >
             <div className="paper-scroll export-preview markdown-body">{renderMarkdown(draft || resumeText || '（暂无内容）')}</div>
             <Callout tone="info">
-              docx / PDF 导出暂未实现：本项目不引入重量级文档库，避免安装体积与中文字体嵌入问题。可用 Markdown 复制到 Word 后再另存为 PDF。
+              Word 与打印视图读取的是<strong>已保存</strong>的简历版本；如果刚才在左侧改过内容，请先保存再导出。
+              PDF 由浏览器打印对话框的「另存为 PDF」生成，A4 排版，板块与表格行不会被分页切断。
             </Callout>
           </Card>
         </div>

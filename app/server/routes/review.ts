@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, nowIso } from '../db.js';
-import { HttpError, ah, idOf, num, str } from '../util.js';
+import { buildDocx } from '../docx-export.js';
+import { HttpError, ah, idOf, num, sendDocx, str } from '../util.js';
 
 export const reviewRouter = Router();
 
@@ -76,10 +77,13 @@ reviewRouter.delete('/reviews/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-reviewRouter.get('/reviews/export', (_req, res) => {
-  const rows = db
+function reviewRows(): Record<string, unknown>[] {
+  return db
     .prepare('SELECT rv.*, j.title AS job_title FROM review rv LEFT JOIN job j ON j.id = rv.job_id ORDER BY rv.id DESC')
     .all() as Record<string, unknown>[];
+}
+
+function reviewMarkdown(rows: Record<string, unknown>[]): string {
   const lines = ['# 丰麟云面 · 复盘记录导出', '', `导出时间：${new Date().toLocaleString('zh-CN')}`, ''];
   if (!rows.length) lines.push('（暂无复盘记录）');
   rows.forEach((r, i) => {
@@ -104,8 +108,22 @@ reviewRouter.get('/reviews/export', (_req, res) => {
       '',
     );
   });
-  res.json({ markdown: lines.join('\n'), count: rows.length });
+  return lines.join('\n');
+}
+
+reviewRouter.get('/reviews/export', (_req, res) => {
+  const rows = reviewRows();
+  res.json({ markdown: reviewMarkdown(rows), count: rows.length });
 });
+
+reviewRouter.get(
+  '/reviews/export/docx',
+  ah(async (_req, res) => {
+    const rows = reviewRows();
+    const buffer = await buildDocx('复盘记录', reviewMarkdown(rows));
+    sendDocx(res, `复盘记录-${new Date().toISOString().slice(0, 10)}.docx`, buffer);
+  }),
+);
 
 /* ---------------- 个人题库 ---------------- */
 

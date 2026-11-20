@@ -19,11 +19,45 @@ export function renderMarkdown(text: string): React.ReactNode {
     para = [];
   };
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trimEnd();
     if (!line.trim()) {
       flushList();
       flushPara();
+      continue;
+    }
+    // 表格：当前行是表头，下一行是 | --- | 分隔行
+    if (line.trim().startsWith('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      flushList();
+      flushPara();
+      const header = splitRow(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        rows.push(splitRow(lines[i]));
+        i += 1;
+      }
+      i -= 1;
+      blocks.push(
+        <table className="md-table" key={`tbl${blocks.length}`}>
+          <thead>
+            <tr>
+              {header.map((cell, ci) => (
+                <th key={ci}>{inline(cell)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri}>
+                {header.map((_, ci) => (
+                  <td key={ci}>{inline(row[ci] ?? '')}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>,
+      );
       continue;
     }
     const h = /^(#{1,3})\s+(.*)$/.exec(line);
@@ -115,4 +149,14 @@ function withBreaks(text: string, keyPrefix: string): React.ReactNode {
       ))}
     </React.Fragment>
   );
+}
+
+function splitRow(line: string): string[] {
+  const body = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return body.split('|').map((cell) => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = splitRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{2,}:?$/.test(cell));
 }

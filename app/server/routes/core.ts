@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db, getSetting, nowIso, setSetting } from '../db.js';
 import { TEMPLATES } from '../templates.js';
-import { HttpError, ah, idOf, str } from '../util.js';
+import { buildDocx } from '../docx-export.js';
+import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { env, hasApiKey } from '../env.js';
 
 export const coreRouter = Router();
@@ -54,6 +55,20 @@ coreRouter.get('/resumes', (_req, res) => {
     .all();
   res.json({ resumes: rows });
 });
+
+coreRouter.get(
+  '/resumes/:id/docx',
+  ah(async (req, res) => {
+    const id = idOf(req);
+    const row = db.prepare('SELECT title, content FROM resume WHERE id = ?').get(id) as
+      | { title: string; content: string }
+      | undefined;
+    if (!row) throw new HttpError(404, '简历不存在');
+    if (!row.content.trim()) throw new HttpError(400, '简历内容为空，无法导出');
+    const buffer = await buildDocx(row.title || '简历', row.content);
+    sendDocx(res, `${row.title || '简历'}.docx`, buffer);
+  }),
+);
 
 coreRouter.post('/resumes', (req, res) => {
   const body = req.body ?? {};

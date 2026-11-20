@@ -127,7 +127,7 @@ export function Home() {
             <Stat label="目标岗位" value={counts?.jobs ?? 0} hint="关联 JD 与面试出题" />
             <Stat label="完成面试" value={counts?.finished ?? 0} hint={`共 ${counts?.interviews ?? 0} 场会话`} />
             <Stat label="题库沉淀" value={counts?.bank ?? 0} hint={`${counts?.weak ?? 0} 道标记为薄弱`} />
-            <Stat label="复盘" value={counts?.reviews ?? 0} hint="可导出 Markdown" />
+            <Stat label="复盘" value={counts?.reviews ?? 0} hint="可导出 Markdown / Word" />
           </div>
 
           <div className="grid-2">
