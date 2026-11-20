@@ -5520,6 +5520,235 @@ select.input {
   color: var(--ink);
 }
 
+/* ---------------- 演示指引 ---------------- */
+
+.guide-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 46px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--panel);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 24px rgba(24, 42, 51, 0.22);
+}
+
+.guide-fab:hover {
+  background: var(--ink-2);
+}
+
+.guide-fab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+}
+
+.guide-fab-sub {
+  opacity: 0.62;
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.guide-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 46px;
+  z-index: 46;
+  width: min(368px, calc(100vw - 28px));
+  max-height: min(72vh, 580px);
+  overflow: auto;
+  padding: 12px 14px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--note-accent);
+  box-shadow: 0 18px 44px rgba(24, 42, 51, 0.2);
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.guide-eyebrow {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.guide-close {
+  font-size: 10.5px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-2);
+  padding: 1px 0;
+}
+
+.guide-close:hover {
+  color: var(--ink);
+}
+
+.guide-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.guide-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--panel);
+  transition: all 0.15s ease;
+}
+
+.guide-dot.done {
+  border-color: var(--cyan);
+  color: var(--cyan-ink);
+  background: var(--cyan-soft);
+}
+
+.guide-dot.current {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--panel);
+}
+
+.guide-progress {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted-2);
+}
+
+.guide-where {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.guide-where.here {
+  color: var(--ok);
+}
+
+.guide-title {
+  margin-top: 4px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.guide-desc {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.guide-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border-left: 2px solid var(--amber);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.guide-status.ok {
+  border-left-color: var(--ok);
+}
+
+.guide-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  flex: 0 0 auto;
+}
+
+.guide-status.ok .guide-status-dot {
+  background: var(--ok);
+}
+
+.guide-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.guide-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.guide-nav {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 4px 2px;
+}
+
+.guide-nav:hover {
+  color: var(--ink);
+}
+
+.guide-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.guide-nav.primary {
+  color: var(--panel);
+  background: var(--ink);
+  padding: 5px 12px;
+}
+
+.guide-nav.primary:hover {
+  background: var(--ink-2);
+  color: var(--panel);
+}
+
+@media screen and (max-width: 760px) {
+  .guide-fab {
+    right: 12px;
+    bottom: 50px;
+  }
+
+  .guide-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 50px;
+    width: auto;
+    max-height: 64vh;
+  }
+}
+
 /* 封面 */
 
 .dossier-cover {

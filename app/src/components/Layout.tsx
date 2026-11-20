@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../state';
 import { lockBodyScroll } from '../lib/scrollLock';
+import { DemoTour } from './DemoTour';
 
 const ICONS: Record<string, ReactNode> = {
   home: (
@@ -191,6 +192,8 @@ export function Layout() {
           <span className="run-item">FENGLIN CLOUD INTERVIEW · TRAINING CONSOLE</span>
         </footer>
       </div>
+
+      <DemoTour />
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (

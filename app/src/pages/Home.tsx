@@ -146,6 +146,7 @@ export function Home() {
           <Button variant={demo?.present ? 'ghost' : 'ink'} onClick={() => void runLoadDemo()} loading={demoBusy === 'load'}>
             {demo?.present ? '重新载入示例' : '载入示例档案'}
           </Button>
+          <Button onClick={() => window.dispatchEvent(new Event('fenglin:start-tour'))}>演示指引</Button>
           {demo?.present && (
             <Button variant="quiet" onClick={() => setConfirmClear(true)} loading={demoBusy === 'clear'}>
               清空示例数据
