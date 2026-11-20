@@ -189,6 +189,52 @@ export interface BankItem {
   last_score: number | null;
   last_practiced_at: string | null;
   created_at: string;
+  next_review_at?: string | null;
+  review_stage?: number | null;
+}
+
+export type ReviewKind = 'bank' | 'review';
+export type ReviewResult = 'good' | 'ok' | 'again';
+
+export interface ReviewTask {
+  kind: ReviewKind;
+  refId: number;
+  question: string;
+  category: string | null;
+  jobTitle: string | null;
+  weak: number;
+  stage: number;
+  dueAt: string;
+  overdueDays: number;
+  lastReviewedAt: string | null;
+  reps: number;
+  rating: number | null;
+  myAnswer: string | null;
+  improvement: string | null;
+  lastScore: number | null;
+  askCount: number | null;
+}
+
+export interface ReviewPlan {
+  today: string;
+  dueCount: number;
+  overdueCount: number;
+  scheduled: number;
+  nextDueAt: string | null;
+  ladder: number[];
+  tasks: ReviewTask[];
+}
+
+export interface ReviewResultRecord {
+  kind: ReviewKind;
+  refId: number;
+  result: ReviewResult;
+  resultLabel: string;
+  stage: number;
+  intervalDays: number;
+  dueAt: string;
+  nextDueAt: string;
+  ladder: number[];
 }
 
 export interface JdAnalysisRecord {

@@ -4154,6 +4154,168 @@ select.input {
   background: var(--panel);
 }
 
+/* ---------------- 记忆曲线复习排程 ---------------- */
+
+.sched-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-left: 3px solid var(--note-accent);
+}
+
+.sched-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sched-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.sched-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.sched-count strong {
+  font-family: var(--mono);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--cyan-ink);
+}
+
+.sched-count.quiet {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+
+.sched-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--amber);
+  background: var(--note-bg);
+  border: 1px solid var(--note-line);
+  padding: 1px 6px;
+}
+
+.sched-note {
+  margin-top: 5px;
+  max-width: 72ch;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.sched-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.bank-due {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--amber);
+  background: var(--note-bg);
+  border-left: 2px solid var(--note-accent);
+  padding: 0 5px;
+}
+
+.sched-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.sched-question {
+  margin-top: 8px;
+  font-size: 15.5px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.sched-meta {
+  margin-top: 8px;
+}
+
+.sched-ref {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.sched-ref p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.sched-ask {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sched-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 14px;
+}
+
+.sched-result {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--ok);
+  background: var(--note-bg);
+}
+
+.sched-result strong {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.sched-result p {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+@media (max-width: 720px) {
+  .sched-card {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .sched-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 /* ============================================================
    页面：档案 / 隐私 / 导入 / 404
    ============================================================ */

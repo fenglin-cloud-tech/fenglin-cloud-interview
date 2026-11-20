@@ -14,6 +14,10 @@ import type {
   FeedbackResult,
   ReportResult,
   GrowthStats,
+  ReviewPlan,
+  ReviewKind,
+  ReviewResult,
+  ReviewResultRecord,
 } from './types';
 
 export class ApiError extends Error {
@@ -208,4 +212,8 @@ export const api = {
   updateBankItem: (id: number, body: { weak?: boolean; category?: string; question?: string }) =>
     patch<{ item: BankItem }>(`/bank/${id}`, body),
   deleteBankItem: (id: number) => del<{ ok: boolean }>(`/bank/${id}`),
+
+  reviewPlan: () => request<ReviewPlan>('/review-plan/today'),
+  recordReviewResult: (kind: ReviewKind, refId: number, result: ReviewResult) =>
+    post<ReviewResultRecord>(`/review-plan/${kind}/${refId}/result`, { result }),
 };

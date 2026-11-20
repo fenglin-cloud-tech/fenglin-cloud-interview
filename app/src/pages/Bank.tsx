@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useApp } from '../state';
-import type { BankItem } from '../types';
-import { formatDateTime } from '../lib/format';
+import type { BankItem, ReviewPlan, ReviewResult, ReviewResultRecord, ReviewTask } from '../types';
+import { formatDate, formatDateTime } from '../lib/format';
 import {
   Button,
   Callout,
@@ -13,6 +13,7 @@ import {
   ErrorState,
   Field,
   Loading,
+  Modal,
   PageHeader,
   Stat,
 } from '../components/ui';
@@ -34,6 +35,13 @@ export function Bank() {
   const [newJob, setNewJob] = useState('');
   const [starting, setStarting] = useState(false);
 
+  const [plan, setPlan] = useState<ReviewPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<ReviewTask[]>([]);
+  const [step, setStep] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [lastResult, setLastResult] = useState<ReviewResultRecord | null>(null);
+
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -51,6 +59,55 @@ export function Bank() {
 
   useEffect(load, [load]);
 
+  const loadPlan = useCallback(() => {
+    setPlanError(null);
+    api
+      .reviewPlan()
+      .then(setPlan)
+      .catch((e) => setPlanError(e instanceof ApiError ? e.message : '排程读取失败'));
+  }, []);
+
+  useEffect(loadPlan, [loadPlan]);
+
+  const startReview = () => {
+    if (!plan?.tasks.length) return;
+    setQueue(plan.tasks);
+    setStep(0);
+    setLastResult(null);
+  };
+
+  const closeReview = () => {
+    setQueue([]);
+    setStep(0);
+    setLastResult(null);
+  };
+
+  const record = async (result: ReviewResult) => {
+    const task = queue[step];
+    if (!task || recording) return;
+    setRecording(true);
+    try {
+      const rec = await api.recordReviewResult(task.kind, task.refId, result);
+      setLastResult(rec);
+      loadPlan();
+      load();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '记录失败', 'err');
+    } finally {
+      setRecording(false);
+    }
+  };
+
+  const nextTask = () => {
+    if (step + 1 >= queue.length) {
+      closeReview();
+      toast('今日复习完成', 'ok');
+      return;
+    }
+    setStep((s) => s + 1);
+    setLastResult(null);
+  };
+
   const add = async () => {
     if (!newQ.trim()) return toast('请填写题目', 'err');
     try {
@@ -63,6 +120,7 @@ export function Bank() {
       setAdding(false);
       toast('已加入题库', 'ok');
       load();
+      loadPlan();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '添加失败', 'err');
     }
@@ -83,6 +141,7 @@ export function Bank() {
       await api.deleteBankItem(item.id);
       toast('已删除', 'ok');
       load();
+      loadPlan();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '删除失败', 'err');
     }
@@ -116,6 +175,48 @@ export function Bank() {
           </>
         }
       />
+
+      <section className="card sched-card">
+        <div className="sched-info">
+          <div className="sched-eyebrow">记忆曲线 · 今日待复习</div>
+          {plan && plan.dueCount > 0 ? (
+            <>
+              <div className="sched-count">
+                <strong>{plan.dueCount}</strong> 道题到期
+                {plan.overdueCount > 0 && <span className="sched-badge">{plan.overdueCount} 道已逾期</span>}
+              </div>
+              <p className="sched-note">
+                按上次练习时间、复盘自评（星级）与薄弱标记排期；间隔档位 {plan.ladder.join(' / ')} 天，记住了升一档，有点模糊保持当前档，没记住回到 1 天。
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="sched-count quiet">
+                {plan ? '今天没有待复习的题' : planError ? '复习排程读取失败' : '正在读取今日排程…'}
+              </div>
+              <p className="sched-note">
+                {plan
+                  ? plan.scheduled > 0 && plan.nextDueAt
+                    ? `下一批 ${formatDate(plan.nextDueAt)} 到期，届时再来。`
+                    : '题库和复盘里还没有可排期的题，先沉淀几道题吧。'
+                  : planError || '排程依据真实练习与复盘数据生成，不会凑数。'}
+              </p>
+            </>
+          )}
+        </div>
+        <div className="sched-actions">
+          {plan && plan.dueCount > 0 && (
+            <Button variant="ink" onClick={startReview}>
+              开始复习
+            </Button>
+          )}
+          {planError && (
+            <Button size="sm" onClick={loadPlan}>
+              重试
+            </Button>
+          )}
+        </div>
+      </section>
 
       <div className="stats-row tight">
         <Stat label="题目总数" value={totals.total} />
@@ -234,6 +335,12 @@ export function Bank() {
                 {b.last_score != null && <span className="muted small">上次 {b.last_score} 分</span>}
                 <span className="muted small">练习 {b.ask_count} 次</span>
                 {b.last_practiced_at && <span className="muted small">最近 {formatDateTime(b.last_practiced_at)}</span>}
+                {b.next_review_at &&
+                  (plan && b.next_review_at <= plan.today ? (
+                    <span className="bank-due">今日到期</span>
+                  ) : (
+                    <span className="muted small">下次复习 {formatDate(b.next_review_at)}</span>
+                  ))}
               </div>
             </div>
             <div className="bank-actions">
@@ -265,6 +372,96 @@ export function Bank() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={queue.length > 0}
+        title="今日复习"
+        onClose={closeReview}
+        wide
+        footer={
+          lastResult ? (
+            <>
+              <Button variant="quiet" onClick={closeReview}>
+                先到这里
+              </Button>
+              <Button variant="ink" onClick={nextTask}>
+                {step + 1 >= queue.length ? '完成' : '下一题'}
+              </Button>
+            </>
+          ) : (
+            <Button variant="quiet" onClick={closeReview}>
+              关闭
+            </Button>
+          )
+        }
+      >
+        {queue[step] && (
+          <>
+            <div className="sched-progress">
+              第 {step + 1} / {queue.length} 题
+              <span className="muted small">
+                {queue[step].kind === 'bank' ? '题库' : '复盘'}
+                {queue[step].jobTitle ? ` · ${queue[step].jobTitle}` : ''}
+              </span>
+            </div>
+            <h3 className="sched-question">{queue[step].question}</h3>
+            <div className="bank-meta sched-meta">
+              {queue[step].category && <Chip tone="ink">{queue[step].category}</Chip>}
+              {queue[step].weak === 1 && <Chip tone="amber">薄弱</Chip>}
+              {queue[step].rating != null && <span className="muted small">复盘自评 {queue[step].rating} 星</span>}
+              {queue[step].lastScore != null && <span className="muted small">上次 {queue[step].lastScore} 分</span>}
+              <span className={queue[step].overdueDays > 0 ? 'bank-due' : 'muted small'}>
+                {queue[step].overdueDays > 0 ? `逾期 ${queue[step].overdueDays} 天` : '今日到期'}
+              </span>
+              {queue[step].reps > 0 && <span className="muted small">已复习 {queue[step].reps} 次</span>}
+            </div>
+
+            {(queue[step].myAnswer || queue[step].improvement) && (
+              <div className="sched-ref">
+                {queue[step].myAnswer && (
+                  <div>
+                    <div className="rv-label">上次的回答</div>
+                    <p>{queue[step].myAnswer}</p>
+                  </div>
+                )}
+                {queue[step].improvement && (
+                  <div>
+                    <div className="rv-label">改进点</div>
+                    <p>{queue[step].improvement}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {lastResult ? (
+              <div className="sched-result">
+                <strong>{lastResult.resultLabel}</strong>
+                <p>
+                  下次复习：{formatDate(lastResult.dueAt)}（{lastResult.intervalDays} 天后 · 第 {lastResult.stage + 1} 档）
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="sched-ask">先在心里过一遍这题，再如实选择掌握程度：</p>
+                <div className="sched-btns">
+                  <Button variant="ink" onClick={() => void record('good')} loading={recording}>
+                    记住了
+                  </Button>
+                  <Button onClick={() => void record('ok')} disabled={recording}>
+                    有点模糊
+                  </Button>
+                  <Button variant="quiet" onClick={() => void record('again')} disabled={recording}>
+                    没记住
+                  </Button>
+                </div>
+                <Callout tone="info">
+                  记住了升一档、有点模糊保持当前档、没记住回到 1 天；档位依次为 {plan?.ladder.join(' / ') || '1 / 3 / 7 / 14 / 30'} 天。
+                </Callout>
+              </>
+            )}
+          </>
+        )}
+      </Modal>
 
       <Callout tone="info">
         题库里的题会作为「追问」的素材，也会在「从题库再练」里逐题重答；答完后分数会回写到这道题上。

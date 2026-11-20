@@ -119,11 +119,24 @@ CREATE TABLE IF NOT EXISTS bank_item (
   created_at        TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS review_task (
+  kind             TEXT NOT NULL,
+  ref_id           INTEGER NOT NULL,
+  stage            INTEGER NOT NULL DEFAULT 0,
+  due_at           TEXT NOT NULL,
+  last_reviewed_at TEXT,
+  reps             INTEGER NOT NULL DEFAULT 0,
+  lapses           INTEGER NOT NULL DEFAULT 0,
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (kind, ref_id)
+);
+
 CREATE TABLE IF NOT EXISTS setting (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_task_due ON review_task(due_at);
 CREATE INDEX IF NOT EXISTS idx_turn_interview ON interview_turn(interview_id, seq);
 CREATE INDEX IF NOT EXISTS idx_bank_category ON bank_item(category, weak);
 CREATE INDEX IF NOT EXISTS idx_review_created ON review(created_at DESC);

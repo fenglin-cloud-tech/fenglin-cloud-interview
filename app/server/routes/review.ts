@@ -1,11 +1,35 @@
 import { Router } from 'express';
 import { db, nowIso } from '../db.js';
 import { buildDocx } from '../docx-export.js';
+import { REVIEW_LADDER, RESULT_LABEL, ensureReviewTasks, getTodayPlan, recordReviewResult } from '../review-schedule.js';
+import type { ReviewKind, ReviewResult } from '../review-schedule.js';
 import { HttpError, ah, idOf, num, sendDocx, str } from '../util.js';
 
 export const reviewRouter = Router();
 
 ensureJobColumn();
+
+/* ---------------- 记忆曲线复习排程 ---------------- */
+
+reviewRouter.get('/review-plan/today', (_req, res) => {
+  res.json(getTodayPlan());
+});
+
+reviewRouter.post('/review-plan/:kind/:refId/result', (req, res) => {
+  const kind = String(req.params.kind);
+  if (kind !== 'bank' && kind !== 'review') throw new HttpError(400, '复习类型不正确');
+  const refId = Number(req.params.refId);
+  if (!Number.isInteger(refId) || refId <= 0) throw new HttpError(400, '题目 ID 不正确');
+  const result = String(req.body?.result || '');
+  if (result !== 'good' && result !== 'ok' && result !== 'again') throw new HttpError(400, '请选择复习结果');
+  let recorded;
+  try {
+    recorded = recordReviewResult(kind as ReviewKind, refId, result as ReviewResult);
+  } catch {
+    throw new HttpError(404, '这道题还没有进入复习排程');
+  }
+  res.json({ ...recorded, resultLabel: RESULT_LABEL[result as ReviewResult], ladder: REVIEW_LADDER });
+});
 
 /* ---------------- 复盘记录 ---------------- */
 
@@ -73,7 +97,9 @@ reviewRouter.put('/reviews/:id', (req, res) => {
 });
 
 reviewRouter.delete('/reviews/:id', (req, res) => {
-  db.prepare('DELETE FROM review WHERE id = ?').run(idOf(req));
+  const id = idOf(req);
+  db.prepare('DELETE FROM review WHERE id = ?').run(id);
+  db.prepare("DELETE FROM review_task WHERE kind = 'review' AND ref_id = ?").run(id);
   res.json({ ok: true });
 });
 
@@ -134,16 +160,24 @@ reviewRouter.get('/bank', (req, res) => {
   const conds: string[] = [];
   const params: unknown[] = [];
   if (category) {
-    conds.push('category = ?');
+    conds.push('b.category = ?');
     params.push(category);
   }
-  if (onlyWeak) conds.push('weak = 1');
+  if (onlyWeak) conds.push('b.weak = 1');
   if (jobId) {
-    conds.push('job_id = ?');
+    conds.push('b.job_id = ?');
     params.push(jobId);
   }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-  const items = db.prepare(`SELECT * FROM bank_item ${where} ORDER BY weak DESC, id DESC LIMIT 300`).all(...params);
+  ensureReviewTasks();
+  const items = db
+    .prepare(
+      `SELECT b.*, t.due_at AS next_review_at, t.stage AS review_stage
+       FROM bank_item b
+       LEFT JOIN review_task t ON t.kind = 'bank' AND t.ref_id = b.id
+       ${where} ORDER BY b.weak DESC, b.id DESC LIMIT 300`,
+    )
+    .all(...params);
   const facet = db.prepare('SELECT category, COUNT(*) AS n FROM bank_item GROUP BY category').all() as {
     category: string;
     n: number;
@@ -198,7 +232,9 @@ reviewRouter.patch('/bank/:id', (req, res) => {
 });
 
 reviewRouter.delete('/bank/:id', (req, res) => {
-  db.prepare('DELETE FROM bank_item WHERE id = ?').run(idOf(req));
+  const id = idOf(req);
+  db.prepare('DELETE FROM bank_item WHERE id = ?').run(id);
+  db.prepare("DELETE FROM review_task WHERE kind = 'bank' AND ref_id = ?").run(id);
   res.json({ ok: true });
 });
 
