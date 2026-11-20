@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鳞巡 · 丰麟云面 设计方向 B</title>
+<link rel="icon" href="/brand/logo.png">
+<style>
+  :root{
+    --bg:#04121f; --bg2:#071a2b; --panel:#0a2238; --panel2:#0c2a45;
+    --line:rgba(90,170,220,.22); --line-strong:rgba(110,210,255,.45);
+    --cyan:#22d3ee; --blue:#0e86c8; --text:#e6f3fa; --muted:#7e9db3;
+    --amber:#e8b34b; --ok:#4ade9f;
+    --sans:"Bahnschrift","DIN Alternate","HarmonyOS Sans SC","Microsoft YaHei","PingFang SC",sans-serif;
+    --mono:"Cascadia Mono","Consolas","SFMono-Regular",monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;background:var(--bg);color:var(--text);
+    font-family:var(--sans);font-size:14px;line-height:1.65;
+    background-image:
+      linear-gradient(rgba(34,211,238,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(34,211,238,.035) 1px,transparent 1px);
+    background-size:44px 44px;
+  }
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  ::selection{background:rgba(34,211,238,.3)}
+
+  .rail{
+    position:fixed;inset:0 auto 0 0;width:78px;z-index:30;
+    background:rgba(4,18,31,.92);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;padding:14px 0 18px;
+    backdrop-filter:blur(6px);
+  }
+  .rail .mark{width:56px;padding:6px;background:linear-gradient(160deg,rgba(34,211,238,.12),transparent);border:1px solid var(--line)}
+  .rail .mark img{width:100%}
+  .rail-nav{margin-top:26px;display:flex;flex-direction:column;gap:4px;width:100%}
+  .rail-nav a{
+    height:46px;display:grid;place-items:center;color:var(--muted);font-size:10px;
+    letter-spacing:.06em;border-left:2px solid transparent;position:relative;
+  }
+  .rail-nav a b{font-family:var(--mono);font-size:9px;font-weight:400}
+  .rail-nav a:hover,.rail-nav a.on{color:var(--cyan);border-left-color:var(--cyan);background:rgba(34,211,238,.06)}
+  .rail-foot{margin-top:auto;writing-mode:vertical-rl;font-size:9px;letter-spacing:.3em;color:var(--muted);opacity:.8}
+
+  .shell{margin-left:78px;min-height:100vh;display:flex;flex-direction:column}
+  .statusbar{
+    display:flex;align-items:center;gap:20px;padding:0 26px;height:44px;
+    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;
+    color:var(--muted);letter-spacing:.06em;background:rgba(7,26,43,.6);position:sticky;top:0;z-index:20;
+  }
+  .statusbar .dot{width:6px;height:6px;background:var(--ok);border-radius:50%;box-shadow:0 0 10px var(--ok);animation:blink 2.4s infinite}
+  .statusbar i{font-style:normal;color:var(--cyan)}
+  .statusbar .right{margin-left:auto;display:flex;gap:18px}
+
+  .top{display:flex;align-items:center;justify-content:space-between;padding:20px 26px 16px;border-bottom:1px solid var(--line)}
+  .top-logo{display:none;height:30px;width:auto}
+  .top h1{font-size:15px;letter-spacing:.22em;font-weight:600;margin:0}
+  .top h1 span{color:var(--cyan)}
+  .top .navs{display:flex;gap:20px;font-size:11.5px;color:var(--muted);letter-spacing:.08em}
+  .top .navs a:hover{color:var(--cyan)}
+  .cmd{padding:8px 14px;border:1px solid var(--line-strong);color:var(--cyan);font-family:var(--mono);font-size:11px;letter-spacing:.08em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+  .cmd:hover{background:rgba(34,211,238,.1)}
+
+  main{flex:1;padding:0 26px 40px;min-width:0}
+  .hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:26px;padding:38px 0 30px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;color:var(--cyan);letter-spacing:.22em;margin-bottom:18px}
+  .hero h2{font-size:clamp(30px,3.4vw,46px);line-height:1.25;letter-spacing:.01em;margin:0 0 18px;font-weight:600}
+  .hero h2 em{font-style:normal;color:var(--cyan);position:relative}
+  .hero h2 em::after{content:"";position:absolute;left:0;bottom:-2px;width:100%;height:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+  .hero p{color:#a9c4d6;font-size:14.5px;max-width:34em;margin:0 0 26px}
+  .cta-row{display:flex;gap:12px;flex-wrap:wrap}
+  .btn-primary{
+    padding:12px 22px;background:var(--cyan);color:#03121d;font-weight:600;font-size:13px;letter-spacing:.08em;
+    clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%);
+  }
+  .btn-primary:hover{background:#67e8f9}
+  .btn-line{padding:12px 20px;border:1px solid var(--line-strong);font-size:12.5px;color:#bfe6f5;letter-spacing:.06em}
+  .btn-line:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  .live{
+    position:relative;border:1px solid var(--line);background:linear-gradient(160deg,rgba(14,134,200,.12),rgba(4,18,31,.4));
+    padding:18px 18px 14px;overflow:hidden;clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%);
+  }
+  .live::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 0,rgba(34,211,238,.14) 50%,transparent 100%);height:60px;animation:scan 5s linear infinite;pointer-events:none}
+  .live-head{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.16em;margin-bottom:16px}
+  .live-head b{color:var(--cyan);font-weight:400}
+  .bars{display:flex;align-items:flex-end;gap:5px;height:118px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+  .bars i{flex:1;background:linear-gradient(180deg,var(--cyan),rgba(14,134,200,.25));min-height:6px;opacity:.85}
+  .bars i:nth-child(2n){opacity:.55}
+  .live-foot{display:flex;justify-content:space-between;margin-top:12px;font-family:var(--mono);font-size:9.5px;color:var(--muted)}
+  .live-foot b{color:var(--text);font-weight:400}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+  .stat{padding:16px 18px 16px 0;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:0}
+  .stat b{display:block;font-family:var(--mono);font-size:24px;color:var(--cyan);font-weight:400;letter-spacing:.02em}
+  .stat span{font-size:10.5px;letter-spacing:.14em;color:var(--muted)}
+
+  .block{padding:26px 0 0}
+  .block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .block-head h3{font-size:12px;letter-spacing:.2em;font-weight:600;margin:0;color:#cfe9f6}
+  .block-head span{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em}
+  .matrix{border-top:1px solid var(--line-strong)}
+  .mrow{
+    display:grid;grid-template-columns:44px minmax(110px,.7fr) minmax(0,1.8fr) 100px 80px 30px;
+    gap:14px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--line);
+    font-size:13px;transition:background .15s ease,padding-left .15s ease;
+  }
+  .mrow:hover{background:rgba(34,211,238,.055);padding-left:10px}
+  .mrow .idx{font-family:var(--mono);font-size:10px;color:var(--cyan)}
+  .mrow .name{font-size:14px;letter-spacing:.08em}
+  .mrow .desc{color:var(--muted);font-size:13px}
+  .mrow .status{font-family:var(--mono);font-size:10px;color:var(--ok);display:flex;align-items:center;gap:6px}
+  .mrow .status::before{content:"";width:5px;height:5px;background:currentColor;border-radius:50%}
+  .mrow .status.warn{color:var(--amber)}
+  .mrow .time{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:right}
+  .mrow .go{text-align:right;color:var(--cyan);font-family:var(--mono)}
+
+  .chain{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:6px}
+  .node{border:1px solid var(--line);padding:14px 12px;position:relative;background:rgba(10,34,56,.5)}
+  .node::after{content:"";position:absolute;right:-10px;top:50%;width:10px;height:1px;background:var(--line-strong)}
+  .node:last-child::after{display:none}
+  .node b{display:block;font-family:var(--mono);font-size:9.5px;color:var(--cyan);letter-spacing:.14em;margin-bottom:6px}
+  .node span{font-size:13px;color:#bcd6e6;line-height:1.5;display:block}
+
+  .footer{margin-top:30px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em}
+
+  /* ---------- optimize ---------- */
+  .work-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:24px 0 14px;border-bottom:1px solid var(--line)}
+  .work-head .crumb{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.14em;margin-bottom:8px}
+  .work-head h2{font-size:24px;margin:0;font-weight:600;letter-spacing:.06em}
+  .work-head .job{font-family:var(--mono);font-size:11px;color:var(--cyan);border:1px solid var(--line-strong);padding:6px 10px}
+
+  .workbench{display:grid;grid-template-columns:280px minmax(0,1fr) 330px;border-bottom:1px solid var(--line);min-height:560px}
+  .pane{border-right:1px solid var(--line);padding:16px 0 0;min-width:0;display:flex;flex-direction:column}
+  .pane:last-child{border-right:0}
+  .pane-head{display:flex;justify-content:space-between;align-items:center;padding:0 16px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--muted)}
+  .pane-head b{color:var(--cyan);font-weight:400}
+  .pane-body{padding:14px 16px 18px;font-size:13px;color:#b9d2e2;overflow:hidden}
+  .jd-line{display:flex;gap:8px;padding:7px 0;border-bottom:1px dashed rgba(90,170,220,.16);font-size:13px}
+  .jd-line i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--muted);padding-top:2px}
+  .jd-line.hit i{color:var(--ok)}
+  .jd-line.miss i{color:var(--amber)}
+
+  .resume-line{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:6px 0;font-size:13px;line-height:1.7}
+  .resume-line i{font-style:normal;font-family:var(--mono);font-size:9px;color:#4f7791;padding-top:4px}
+  .hl{background:rgba(34,211,238,.12);border-left:2px solid var(--cyan);padding-left:6px;margin-left:-8px}
+  .hl.bad{background:rgba(232,179,75,.1);border-left-color:var(--amber)}
+
+  .meter{display:flex;gap:3px;margin:4px 0 14px}
+  .meter i{height:26px;flex:1;background:rgba(90,170,220,.14)}
+  .meter i.on{background:var(--cyan)}
+  .meter i.mid{background:rgba(34,211,238,.45)}
+  .score-row{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+  .score-row b{font-family:var(--mono);font-size:40px;color:var(--cyan);font-weight:400;line-height:1}
+  .score-row span{font-size:10.5px;color:var(--muted);letter-spacing:.1em}
+  .sug{border-top:1px solid var(--line);padding:10px 0;font-size:13px;line-height:1.65}
+  .sug b{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--amber);margin-bottom:3px}
+  .sug b.ok{color:var(--ok)}
+  .sug span{color:#c2d8e6}
+  .cmdbar{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 0;flex-wrap:wrap}
+  .runstate{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.08em}
+  .runstate .seg{display:flex;gap:3px}
+  .runstate .seg i{width:18px;height:5px;background:rgba(90,170,220,.2)}
+  .runstate .seg i.on{background:var(--cyan)}
+  .cmdbar .btns{display:flex;gap:10px}
+
+  .lab-switch{position:fixed;right:20px;bottom:18px;z-index:60;display:flex;gap:2px;background:#0a2238;border:1px solid var(--line)}
+  .lab-switch button{padding:8px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+  .lab-switch button.on{background:var(--cyan);color:#03121d}
+  .lab-badge{position:fixed;right:0;top:50%;transform:rotate(90deg) translateX(50%);transform-origin:right top;font-family:var(--mono);font-size:9px;letter-spacing:.3em;color:var(--muted);z-index:40}
+
+  body[data-view="home"] #view-optimize,body[data-view="optimize"] #view-home{display:none}
+
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  @keyframes scan{0%{transform:translateY(-80px)}100%{transform:translateY(320px)}}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .hero h2,.work-head h2{animation:rise .5s steps(6) both}
+
+  /* ================= 亮色版：鳞巡 · 训练指挥台 ================= */
+  :root{
+    --bg:#f7f9fb; --bg2:#eef3f7; --panel:#ffffff; --panel2:#f4f8fb;
+    --line:#dce4eb; --line-strong:#b7c6d4;
+    --cyan:#0b8fb3; --blue:#1e5fa8; --text:#162a3e; --muted:#5e7386;
+    --ok:#1c7f55; --amber:#a96a12;
+  }
+  body{
+    background:var(--bg);color:var(--text);
+    background-image:
+      linear-gradient(rgba(30,95,168,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(30,95,168,.05) 1px,transparent 1px);
+    background-size:48px 48px;
+  }
+  .rail{background:#fbfdfe;border-right:1px solid var(--line);backdrop-filter:none;box-shadow:1px 0 0 #eef2f6}
+  .rail .mark{background:#fff;border-color:var(--line)}
+  .rail-nav a{color:var(--muted)}
+  .rail-nav a b{color:#95a7b7}
+  .rail-nav a:hover,.rail-nav a.on{color:#0b7f9e;border-left-color:var(--cyan);background:#edf6fa}
+  .statusbar{background:#f2f7fa;border-color:var(--line);color:var(--muted)}
+  .statusbar i{color:#0b7f9e}
+  .top{background:transparent}
+  .top h1{color:var(--text)}
+  .top h1 span{color:#0b7f9e}
+  .top .navs a{color:var(--muted)}
+  .cmd{border-color:var(--line-strong);color:#0b7f9e;background:#fff}
+  .cmd:hover{background:#eaf5f9}
+  .hero{border-color:var(--line)}
+  .hero h2{color:var(--text)}
+  .hero h2 em{color:#0b7f9e}
+  .hero h2 em::after{background:linear-gradient(90deg,var(--cyan),transparent)}
+  .hero p{color:#4b6173}
+  .btn-primary{background:#0b7f9e;color:#fff}
+  .btn-primary:hover{background:#086a85}
+  .btn-line{border-color:var(--line-strong);color:#2d4a63;background:#fff}
+  .btn-line:hover{border-color:var(--cyan);color:#0b7f9e}
+  .live{background:#fff;border-color:var(--line);box-shadow:0 18px 40px -34px rgba(22,42,62,.45);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%)}
+  .live::before{background:linear-gradient(180deg,transparent,rgba(11,143,179,.10),transparent)}
+  .live-head{color:var(--muted)}
+  .live-head b{color:#0b7f9e}
+  .bars i{background:linear-gradient(180deg,#0b8fb3,#bfe3ec)}
+  .bars{border-color:var(--line)}
+  .live-foot{color:var(--muted)}
+  .live-foot b{color:var(--text)}
+  .stats{border-color:var(--line)}
+  .stat{border-color:var(--line)}
+  .stat b{color:#0b7f9e}
+  .stat span{color:var(--muted)}
+  .block-head h3{color:#162a3e}
+  .block-head span{color:var(--muted)}
+  .matrix{border-top-color:var(--line-strong)}
+  .mrow{border-color:var(--line);color:var(--text)}
+  .mrow:hover{background:#f1f7fa}
+  .mrow .idx{color:#0b7f9e}
+  .mrow .desc{color:var(--muted)}
+  .mrow .status{color:var(--ok)}
+  .mrow .status.warn{color:var(--amber)}
+  .mrow .time{color:var(--muted)}
+  .mrow .go{color:#0b7f9e}
+  .node{background:#fbfdfe;border-color:var(--line)}
+  .node::after{background:var(--line-strong)}
+  .node b{color:#0b7f9e}
+  .node span{color:#3f5668}
+  .footer{color:var(--muted);border-color:var(--line)}
+  .work-head{border-color:var(--line)}
+  .work-head .crumb{color:var(--muted)}
+  .work-head h2{color:var(--text)}
+  .work-head .job{color:#0b7f9e;border-color:var(--line-strong);background:#fff}
+  .workbench{border-color:var(--line)}
+  .pane{border-color:var(--line);background:#fff}
+  .pane-head{color:var(--muted);border-color:var(--line)}
+  .pane-head b{color:#0b7f9e}
+  .pane-body{color:#3e5568}
+  .jd-line{border-color:#e8eef3;color:#3e5568}
+  .jd-line i{color:#93a5b4}
+  .jd-line.hit i{color:var(--ok)}
+  .jd-line.miss i{color:var(--amber)}
+  .resume-line i{color:#93a5b4}
+  .hl{background:#eaf6fa;border-left-color:var(--cyan);color:#17364b}
+  .hl.bad{background:#fdf4e5;border-left-color:var(--amber)}
+  .meter i{background:#e6edf3}
+  .meter i.on{background:#0b8fb3}
+  .meter i.mid{background:#8fcbdc}
+  .score-row b{color:#0b7f9e}
+  .score-row span{color:var(--muted)}
+  .sug{border-color:var(--line)}
+  .sug b{color:var(--amber)}
+  .sug b.ok{color:var(--ok)}
+  .sug span{color:#3e5568}
+  .runstate{color:var(--muted)}
+  .runstate .seg i{background:#e2eaf0}
+  .runstate .seg i.on{background:#0b8fb3}
+  .lab-switch{background:#fff;border-color:var(--line)}
+  .lab-switch button{color:var(--muted)}
+  .lab-switch button.on{background:#0b7f9e;color:#fff}
+  .lab-badge{color:#9aaab8}
+
+  @media (max-width:1120px){
+    .workbench{grid-template-columns:240px minmax(0,1fr) 290px}
+    .mrow{grid-template-columns:36px minmax(96px,.7fr) minmax(0,1.5fr) 30px}
+    .mrow .status,.mrow .time{display:none}
+  }
+  @media (max-width:860px){
+    .rail{display:none}
+    .shell{margin-left:0}
+    .statusbar{padding:0 16px;gap:12px;font-size:9px}
+    .statusbar .right span:nth-child(2){display:none}
+    .top{padding:14px 16px;gap:10px}
+    .top-logo{display:block;height:28px}
+    .top h1{font-size:12px;letter-spacing:.12em}
+    .top h1 span{display:none}
+    .cmd{font-size:10px;padding:7px 10px}
+    .top .navs{display:none}
+    main{padding:0 16px 28px}
+    .hero{grid-template-columns:1fr;gap:22px;padding:24px 0 22px}
+    .hero h2{font-size:31px}
+    .hero p{font-size:14px}
+    .stats{grid-template-columns:1fr 1fr}
+    .stat{border-bottom:1px solid var(--line)}
+    .stat:nth-child(2){border-right:0}
+    .mrow{grid-template-columns:30px 1fr 20px;gap:8px;padding:12px 0}
+    .mrow .desc{grid-column:2/3;font-size:12px;color:var(--muted)}
+    .chain{grid-template-columns:1fr 1fr}
+    .node::after{display:none}
+    .workbench{grid-template-columns:1fr}
+    .pane{border-right:0;border-bottom:1px solid var(--line)}
+    .pane-body{max-height:none}
+    .work-head{flex-direction:column;align-items:flex-start;gap:10px}
+    .lab-switch{right:10px;bottom:10px}
+  }
+</style>
+</head>
+<body data-view="home">
+<div class="lab-badge">DIRECTION B / 鳞巡</div>
+
+<aside class="rail">
+  <div class="mark"><img src="/brand/logo.png" alt="丰麟云面"></div>
+  <nav class="rail-nav">
+    <a href="#" class="on"><b>01</b>总览</a>
+    <a href="#modules"><b>02</b>模块</a>
+    <a href="#chain"><b>03</b>链路</a>
+    <a href="#" data-to="optimize"><b>04</b>优化</a>
+    <a href="#"><b>05</b>面试</a>
+    <a href="#"><b>06</b>报告</a>
+  </nav>
+  <div class="rail-foot">FL · CLOUD OPS</div>
+</aside>
+
+<div class="shell">
+  <div class="statusbar">
+    <span class="dot"></span><span>SYS <i>ONLINE</i></span>
+    <span>MODEL <i>GLM-4-AIR</i></span>
+    <span>QUEUE <i>03</i></span>
+    <div class="right"><span>LATENCY <i>1.2s</i></span><span>SHARED DEMO</span><span id="clock">--:--:--</span></div>
+  </div>
+
+  <div class="top">
+    <img class="top-logo" src="/brand/logo.png" alt="丰麟云面">
+    <h1>丰麟云面<span> / 训练指挥台</span></h1>
+    <div class="navs"><a href="#">简历</a><a href="#">岗位</a><a href="#">面试</a><a href="#">复盘</a><a href="#">题库</a></div>
+    <button class="cmd">启动一次模拟 →</button>
+  </div>
+
+  <main>
+    <!-- ================= 首页 ================= -->
+    <section id="view-home">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">INTERVIEW TRAINING CONSOLE / 01</div>
+          <h2>把面试拆成<br><em>可观测的信号</em>。</h2>
+          <p>简历、岗位与回答在同一条链路上对照。每一次作答都被拆成结构、内容、表达三段信号，弱处自动追问，直到答得住。</p>
+          <div class="cta-row">
+            <button class="btn-primary">建立训练任务</button>
+            <button class="btn-line">查看示例报告</button>
+          </div>
+        </div>
+        <div class="live">
+          <div class="live-head"><b>● LIVE SIGNAL</b><span>SESSION / 03</span></div>
+          <div class="bars">
+            <i style="height:34%"></i><i style="height:52%"></i><i style="height:41%"></i><i style="height:68%"></i>
+            <i style="height:57%"></i><i style="height:76%"></i><i style="height:63%"></i><i style="height:88%"></i>
+            <i style="height:72%"></i><i style="height:94%"></i><i style="height:81%"></i><i style="height:100%"></i>
+            <i style="height:86%"></i><i style="height:91%"></i><i style="height:78%"></i><i style="height:96%"></i>
+          </div>
+          <div class="live-foot"><span>结构 <b>72</b></span><span>内容 <b>64</b></span><span>表达 <b>81</b></span><span>追问 <b>×2</b></span></div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><b>06</b><span>训练模块</span></div>
+        <div class="stat"><b>03</b><span>评分维度</span></div>
+        <div class="stat"><b>02</b><span>追问上限</span></div>
+        <div class="stat"><b>100%</b><span>结果可回看</span></div>
+      </div>
+
+      <section class="block" id="modules">
+        <div class="block-head"><h3>MODULE MATRIX</h3><span>6 ENTRIES / ALL ONLINE</span></div>
+        <div class="matrix">
+          <a class="mrow" href="#"><span class="idx">01</span><span class="name">简历优化</span><span class="desc">逐段诊断，标出缺口并给出改写</span><span class="status">READY</span><span class="time">12 MIN</span><span class="go">→</span></a>
+          <a class="mrow" href="#"><span class="idx">02</span><span class="name">JD 匹配</span><span class="desc">岗位要求逐条对照，计算匹配与缺口</span><span class="status">READY</span><span class="time">05 MIN</span><span class="go">→</span></a>
+          <a class="mrow" href="#"><span class="idx">03</span><span class="name">模拟面试</span><span class="desc">按岗位出题，弱回答触发最多两层追问</span><span class="status">READY</span><span class="time">20 MIN</span><span class="go">→</span></a>
+          <a class="mrow" href="#"><span class="idx">04</span><span class="name">面试报告</span><span class="desc">三维评分、原句问题与改写示范</span><span class="status">AUTO</span><span class="time">—</span><span class="go">→</span></a>
+          <a class="mrow" href="#"><span class="idx">05</span><span class="name">复盘本</span><span class="desc">记录当场反应与下一步动作</span><span class="status warn">DRAFT</span><span class="time">08 MIN</span><span class="go">→</span></a>
+          <a class="mrow" href="#"><span class="idx">06</span><span class="name">题库</span><span class="desc">按能力项归档，抽题自测并标记熟练度</span><span class="status">READY</span><span class="time">ANY</span><span class="go">→</span></a>
+        </div>
+      </section>
+
+      <section class="block" id="chain">
+        <div class="block-head"><h3>PRACTICE CHAIN</h3><span>简历 → 岗位 → 作答 → 追问 → 复盘</span></div>
+        <div class="chain">
+          <div class="node"><b>STEP 01</b><span>选定简历与目标岗位</span></div>
+          <div class="node"><b>STEP 02</b><span>对照缺口，先改简历</span></div>
+          <div class="node"><b>STEP 03</b><span>按岗位生成问题并作答</span></div>
+          <div class="node"><b>STEP 04</b><span>弱处追问，最多两层</span></div>
+          <div class="node"><b>STEP 05</b><span>报告归档，进入复盘</span></div>
+        </div>
+      </section>
+
+      <div class="footer"><span>FENGLIN CLOUD INTERVIEW / DESIGN LAB B</span><span>ALL SIGNALS TRACEABLE</span></div>
+    </section>
+
+    <!-- ================= 简历优化 ================= -->
+    <section id="view-optimize">
+      <div class="work-head">
+        <div>
+          <div class="crumb">MODULE 01 / RESUME OPTIMIZE</div>
+          <h2>简历优化 · 对照工作台</h2>
+        </div>
+        <div class="job">TARGET / JAVA 后端实习</div>
+      </div>
+
+      <div class="workbench">
+        <div class="pane">
+          <div class="pane-head"><span>JD / 岗位要求</span><b>12 条</b></div>
+          <div class="pane-body">
+            <div class="jd-line hit"><i>01</i><span>熟悉 Java 与 Spring Boot</span></div>
+            <div class="jd-line hit"><i>02</i><span>了解 MySQL 索引与事务</span></div>
+            <div class="jd-line hit"><i>03</i><span>使用过 Redis 缓存</span></div>
+            <div class="jd-line miss"><i>04</i><span>具备量化结果意识</span></div>
+            <div class="jd-line hit"><i>05</i><span>能定位线上性能问题</span></div>
+            <div class="jd-line miss"><i>06</i><span>有跨团队协作经历</span></div>
+            <div class="jd-line hit"><i>07</i><span>熟悉 Git 协作流程</span></div>
+            <div class="jd-line"><i>08</i><span>了解消息队列与幂等</span></div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="pane-head"><span>RESUME / 原稿</span><b>418 字</b></div>
+          <div class="pane-body">
+            <div class="resume-line"><i>01</i><span>丰麟大学 · 计算机科学与技术 · 本科 · GPA 3.7/4.0</span></div>
+            <div class="resume-line"><i>02</i><span>校园二手交易平台，<span class="hl bad">负责后端开发</span>，使用 Java、Spring Boot 与 MySQL</span></div>
+            <div class="resume-line"><i>03</i><span><span class="hl bad">做了缓存优化</span>，页面打开更快，<span class="hl bad">用户反馈不错</span></span></div>
+            <div class="resume-line"><i>04</i><span>实习：会员积分模块，<span class="hl">补索引，响应 800ms → 90ms</span></span></div>
+            <div class="resume-line"><i>05</i><span>技能：Java、Spring Boot、MySQL、Redis、Git、Docker</span></div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="pane-head"><span>SUGGESTIONS</span><b>4 条</b></div>
+          <div class="pane-body">
+            <div class="score-row"><b>78</b><span>/100 · 内容可用，证据不足</span></div>
+            <div class="meter">
+              <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="mid"></i><i class="mid"></i><i></i><i></i><i></i>
+            </div>
+            <div class="sug"><b>STRUCTURE / 高</b><span>「负责后端开发」缺动作与边界，补上你独立承担的部分。</span></div>
+            <div class="sug"><b>CONTENT / 高</b><span>「更快」「反馈不错」不可验证，补加载时间与转化率前后对比。</span></div>
+            <div class="sug"><b>CONTENT / 中</b><span>技术选型没有理由，说明为什么用 Redis 与布隆过滤器。</span></div>
+            <div class="sug"><b class="ok">EXPRESSION / 低</b><span>整体表达清楚，删掉自我评价里的空泛形容词即可。</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmdbar">
+        <div class="runstate">
+          <span>RUN 03/05</span>
+          <span class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+          <span>后台生成中，可离开页面</span>
+        </div>
+        <div class="btns">
+          <button class="btn-line">导出 Word</button>
+          <button class="btn-line">打印</button>
+          <button class="btn-primary">采纳全部</button>
+        </div>
+      </div>
+
+      <div class="footer"><span>DIFF VIEW / 保留原有事实</span><span>AI 建议不会自动写入</span></div>
+    </section>
+  </main>
+</div>
+
+<div class="lab-switch">
+  <button data-target="home" class="on">HOME</button>
+  <button data-target="optimize">OPTIMIZE</button>
+</div>
+
+<script>
+  const sw = document.querySelectorAll('.lab-switch button');
+  const setView = (v) => {
+    document.body.dataset.view = v;
+    sw.forEach((x) => x.classList.toggle('on', x.dataset.target === v));
+    window.scrollTo(0, 0);
+  };
+  sw.forEach((b) => b.addEventListener('click', () => setView(b.dataset.target)));
+  const rail = document.querySelector('[data-to="optimize"]');
+  if (rail) rail.addEventListener('click', (e) => { e.preventDefault(); setView('optimize'); });
+  const tick = () => {
+    const d = new Date();
+    const el = document.getElementById('clock');
+    if (el) el.textContent = d.toLocaleTimeString('zh-CN', { hour12: false });
+  };
+  tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>

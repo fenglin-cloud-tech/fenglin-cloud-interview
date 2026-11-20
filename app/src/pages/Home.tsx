@@ -95,7 +95,8 @@ export function Home() {
           </div>
         </div>
         <div className="hero-side">
-          <div className="hero-seal">闭环</div>
+          <div className="hero-seal">闭环 · LOOP</div>
+          <div className="chain-label">CHAIN / 五段链路</div>
           <ol className="flow">
             {[
               ['简历', '/resumes'],
@@ -122,6 +123,10 @@ export function Home() {
         <Loading label="正在读取你的训练数据" />
       ) : (
         <>
+          <div className="matrix-head">
+            <span className="matrix-label">DATA MATRIX / 训练数据</span>
+            <span className="matrix-meta">实时读取本机数据</span>
+          </div>
           <div className="stats-row">
             <Stat label="简历" value={counts?.resumes ?? 0} hint="可维护多份，面向不同岗位" />
             <Stat label="目标岗位" value={counts?.jobs ?? 0} hint="关联 JD 与面试出题" />

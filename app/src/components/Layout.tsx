@@ -75,9 +75,7 @@ export function Layout() {
     <div className="shell">
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="brand">
-          <div className="brand-seal" aria-hidden>
-            面
-          </div>
+          <img className="brand-logo" src="/brand/logo.png" alt="丰麟云面" />
           <div>
             <div className="brand-name">丰麟云面</div>
             <div className="brand-sub">求职陪练 · 闭环训练</div>
@@ -128,8 +126,15 @@ export function Layout() {
           <button className="icon-btn menu-btn" onClick={() => setOpen(true)} aria-label="打开菜单">
             ☰
           </button>
+          <img className="topbar-logo" src="/brand/logo.png" alt="丰麟云面" />
           <div className="topbar-title">
             <span className="topbar-path">{pathLabel(location.pathname)}</span>
+          </div>
+          <div className="status-chips" aria-hidden>
+            <span className={`status-chip ${aiConfigured ? 'on' : 'off'}`}>
+              {aiConfigured ? 'MODEL · 在线' : 'MODEL · 本地降级'}
+            </span>
+            <span className="status-chip">{sharedDemo ? 'STORE · 共享演示' : 'STORE · 本机'}</span>
           </div>
           <div className="context">
             <label className="ctx-field">
@@ -166,6 +171,21 @@ export function Layout() {
         <main className="content">
           <Outlet />
         </main>
+
+        <footer className="run-bar" aria-label="运行状态">
+          <span className="run-item">
+            <i className={aiConfigured ? '' : 'off'} />
+            运行状态 <b>{aiConfigured ? '正常' : '降级'}</b>
+          </span>
+          <span className="run-item">
+            数据 <b>{sharedDemo ? '公网共享演示 · 重启清空' : '仅存本机 SQLite'}</b>
+          </span>
+          <span className="run-item">
+            模型 <b>{aiConfigured ? '智谱 GLM · 结果标注来源' : '未配置 · 本地规则'}</b>
+          </span>
+          <span className="run-spacer" />
+          <span className="run-item">FENGLIN CLOUD INTERVIEW · TRAINING CONSOLE</span>
+        </footer>
       </div>
 
       <div className="toasts" aria-live="polite">

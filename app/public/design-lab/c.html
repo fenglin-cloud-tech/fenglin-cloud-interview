@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云程 · 丰麟云面 设计方向 C</title>
+<link rel="icon" href="/brand/logo.png">
+<style>
+  :root{
+    --paper:#fbfaf5; --paper2:#f3f0e7; --ink:#2b3440; --indigo:#14265c;
+    --mist:#a9c9d8; --cyan:#0f9fc4; --cyan-soft:#7fd0e2; --sand:#e5ddcb; --muted:#7b7a72;
+    --serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","SimSun",serif;
+    --kai:"Kaiti SC","STKaiti","KaiTi","Songti SC",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.9;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+  .topbar{display:flex;align-items:center;gap:22px;padding:20px 54px;border-bottom:1px solid var(--sand);position:relative;z-index:20;background:rgba(251,250,245,.9);backdrop-filter:blur(8px)}
+  .topbar img{height:46px;width:auto}
+  .topbar .name{font-family:var(--serif);font-size:19px;letter-spacing:.24em;color:var(--indigo)}
+  .topbar .sub{font-size:11px;letter-spacing:.22em;color:var(--muted);border-left:1px solid var(--sand);padding-left:20px}
+  .topbar .right{margin-left:auto;display:flex;align-items:center;gap:26px;font-size:12.5px;color:var(--muted);letter-spacing:.08em}
+  .topbar .right a{border-bottom:1px solid transparent;padding-bottom:2px}
+  .topbar .right a:hover{border-color:var(--cyan);color:var(--indigo)}
+  .enter{font-family:var(--serif);color:var(--indigo);font-size:14px;letter-spacing:.14em;border-bottom:1px solid var(--indigo);padding-bottom:2px}
+  .enter:hover{color:var(--cyan);border-color:var(--cyan)}
+
+  main{max-width:1340px;margin:0 auto;padding:0 54px 80px;position:relative}
+
+  /* ---------- 卷首 ---------- */
+  .prologue{display:grid;grid-template-columns:70px minmax(0,1fr) 190px;gap:34px;padding:64px 0 40px;position:relative}
+  .side-rule{position:relative}
+  .side-rule::before{content:"";position:absolute;left:24px;top:8px;bottom:0;width:1px;background:var(--sand)}
+  .side-rule span{position:absolute;left:18px;top:0;background:var(--paper);padding:6px 0;font-size:10px;letter-spacing:.26em;color:var(--muted);writing-mode:vertical-rl;height:96px}
+  .prologue h1{font-family:var(--serif);font-weight:600;font-size:clamp(42px,5.6vw,74px);line-height:1.32;letter-spacing:.02em;color:var(--indigo);margin:0 0 26px}
+  .prologue h1 em{font-style:normal;color:var(--cyan);position:relative}
+  .prologue h1 em::after{content:"";position:absolute;left:2%;right:2%;bottom:6px;height:1px;background:var(--cyan)}
+  .lede{max-width:29em;font-size:15.5px;color:#4a5058;margin:0 0 30px}
+  .prologue .line{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+  .prologue .line i{height:1px;flex:1;background:var(--sand);position:relative}
+  .prologue .line i::after{content:"";position:absolute;right:0;top:-2px;width:5px;height:5px;background:var(--cyan)}
+  .prologue .line span{font-family:var(--serif);font-size:11px;letter-spacing:.24em;color:var(--muted)}
+  .cta-row{display:flex;align-items:center;gap:32px;flex-wrap:wrap}
+  .cta-main{font-family:var(--serif);font-size:17px;letter-spacing:.14em;color:var(--indigo);border-bottom:1px solid var(--indigo);padding-bottom:4px}
+  .cta-main:hover{color:var(--cyan);border-color:var(--cyan)}
+  .cta-quiet{font-size:13px;color:var(--muted);border-bottom:1px solid transparent}
+  .cta-quiet:hover{border-color:var(--mist)}
+
+  .vertical-note{writing-mode:vertical-rl;font-family:var(--serif);font-size:14px;letter-spacing:.34em;color:#9a9484;align-self:start;padding-top:8px;line-height:2.2}
+  .vertical-note b{font-weight:400;color:var(--indigo)}
+  .hero-cloud{position:absolute;right:-40px;bottom:-30px;width:420px;opacity:.5;pointer-events:none;color:var(--mist)}
+  .hero-cloud svg{width:100%;height:auto}
+
+  /* ---------- 四程 ---------- */
+  .journey{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--indigo);border-bottom:1px solid var(--sand);margin:22px 0 10px}
+  .stage{padding:22px 26px 26px 0;border-right:1px solid var(--sand);position:relative;transition:padding-left .25s ease}
+  .stage:last-child{border-right:0}
+  .stage:hover{padding-left:10px}
+  .stage b{display:block;font-family:var(--serif);font-size:30px;color:var(--sand);line-height:1;margin-bottom:10px;transition:color .25s ease}
+  .stage:hover b{color:var(--cyan)}
+  .stage h3{font-family:var(--serif);font-size:16px;letter-spacing:.18em;color:var(--indigo);margin:0 0 6px}
+  .stage p{margin:0;font-size:13px;color:var(--muted);line-height:1.75}
+
+  /* ---------- 章节 ---------- */
+  .chapter{display:grid;grid-template-columns:150px minmax(0,1fr);gap:40px;padding:56px 0 30px;border-bottom:1px solid var(--sand);position:relative}
+  .chapter-mark{position:sticky;top:96px;align-self:start;height:max-content}
+  .chapter-mark b{display:block;font-family:var(--serif);font-size:44px;font-weight:400;color:var(--indigo);line-height:1}
+  .chapter-mark span{display:block;margin-top:12px;font-family:var(--serif);font-size:12px;letter-spacing:.32em;color:var(--cyan);writing-mode:vertical-rl;height:98px}
+  .chapter-body{min-width:0}
+  .chapter-body h2{font-family:var(--serif);font-weight:600;font-size:clamp(26px,2.5vw,36px);letter-spacing:.06em;color:var(--indigo);margin:0 0 16px}
+  .chapter-body .note{font-family:var(--kai);font-size:15px;color:var(--muted);margin:0 0 26px;letter-spacing:.06em}
+
+  .signposts{margin:0;padding:0;list-style:none}
+  .signpost{display:grid;grid-template-columns:64px minmax(140px,.9fr) minmax(0,2fr) 26px;gap:20px;align-items:baseline;padding:18px 0;border-top:1px solid var(--sand);transition:padding-left .25s ease,opacity .25s ease}
+  .signpost:hover{padding-left:10px;opacity:.86}
+  .signpost .n{font-family:var(--serif);font-size:13px;color:var(--cyan);letter-spacing:.1em}
+  .signpost h4{font-family:var(--serif);font-size:19px;letter-spacing:.1em;color:var(--indigo);margin:0;font-weight:600}
+  .signpost p{margin:0;font-size:13.5px;color:#5a5f66;line-height:1.8}
+  .signpost .arrow{font-family:var(--serif);color:var(--cyan);text-align:right}
+  .signpost:nth-child(2){margin-left:26px}
+  .signpost:nth-child(3){margin-left:52px}
+  .signpost:nth-child(4){margin-left:26px}
+  .signpost:nth-child(5){margin-left:0}
+  .signpost:nth-child(6){margin-left:52px}
+
+  .quote-block{margin:30px 0 0;padding:26px 0 26px 32px;border-left:1px solid var(--cyan);font-family:var(--serif);font-size:17px;line-height:2;color:var(--indigo);max-width:34em}
+  .quote-block span{display:block;margin-top:10px;font-family:var(--sans);font-size:11.5px;letter-spacing:.18em;color:var(--muted)}
+
+  .cta-band{margin-top:56px;position:relative;padding:44px 0 10px;border-top:1px solid var(--indigo);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:end}
+  .cta-band h2{font-family:var(--serif);font-size:clamp(28px,3vw,42px);color:var(--indigo);margin:0 0 10px;letter-spacing:.06em;font-weight:600}
+  .cta-band p{margin:0;color:var(--muted);font-size:14px}
+  .cta-band .cloud-wash{position:absolute;right:0;top:-40px;width:330px;opacity:.35;pointer-events:none;color:var(--cyan)}
+  footer{display:flex;justify-content:space-between;gap:16px;margin-top:34px;font-size:11.5px;letter-spacing:.14em;color:var(--muted)}
+
+  /* ---------- 简历优化 ---------- */
+  .page-title{display:grid;grid-template-columns:150px minmax(0,1fr);gap:40px;padding:48px 0 24px;border-bottom:1px solid var(--indigo)}
+  .page-title .label{font-family:var(--serif);font-size:12px;letter-spacing:.3em;color:var(--cyan);writing-mode:vertical-rl;height:82px;justify-self:start}
+  .page-title h1{font-family:var(--serif);font-size:clamp(32px,3.6vw,46px);color:var(--indigo);margin:0 0 10px;letter-spacing:.06em;font-weight:600}
+  .page-title p{margin:0;color:var(--muted);font-size:14px}
+  .page-title .job-line{margin-top:14px;font-size:12.5px;letter-spacing:.12em;color:var(--indigo);border-bottom:1px solid var(--sand);display:inline-block;padding-bottom:3px}
+
+  .fields{display:grid;grid-template-columns:150px minmax(0,1fr);gap:40px;padding:32px 0 8px}
+  .field{display:grid;grid-template-columns:120px minmax(0,1fr);gap:20px;align-items:baseline;padding:14px 0;border-bottom:1px solid var(--sand)}
+  .field label{font-size:12px;letter-spacing:.18em;color:var(--muted)}
+  .field .value{font-family:var(--serif);font-size:16px;color:var(--ink);border-bottom:1px dashed transparent}
+  .field .value.blank{color:#b3b0a5}
+  .field .value:hover{border-color:var(--cyan)}
+
+  .review{display:grid;grid-template-columns:150px minmax(0,1fr);gap:40px;padding:38px 0 10px;border-bottom:1px solid var(--sand)}
+  .review-side{position:sticky;top:96px;align-self:start;height:max-content}
+  .review-side .big{font-family:var(--serif);font-size:64px;line-height:.9;color:var(--indigo)}
+  .review-side .of{font-size:11px;letter-spacing:.16em;color:var(--muted);margin-top:6px}
+  .review-side .verdict{margin-top:18px;font-family:var(--kai);font-size:14px;color:var(--cyan);letter-spacing:.1em;line-height:1.8}
+  .scale{margin-top:18px}
+  .scale .bar{height:1px;background:var(--sand);position:relative;margin:16px 0 6px}
+  .scale .bar::before{content:"";position:absolute;left:0;top:-1px;height:3px;width:78%;background:var(--cyan)}
+  .scale .ticks{display:flex;justify-content:space-between;font-size:9px;color:#a9a598;letter-spacing:.06em}
+
+  .review-body h2{font-family:var(--serif);font-size:22px;color:var(--indigo);margin:0 0 8px;letter-spacing:.08em;font-weight:600}
+  .review-body .sub{font-size:13px;color:var(--muted);margin:0 0 18px}
+  .annot{margin:0;padding:0;list-style:none;counter-reset:a}
+  .annot li{counter-increment:a;display:grid;grid-template-columns:30px minmax(0,1fr);gap:14px;padding:16px 0;border-top:1px solid var(--sand)}
+  .annot li::before{content:"〇" counter(a);font-family:var(--serif);font-size:11px;color:var(--cyan);padding-top:4px;grid-column:1;grid-row:1/span 2}
+  .annot b{grid-column:2;grid-row:1;display:block;font-family:var(--serif);font-size:15px;color:var(--ink);margin-bottom:4px;letter-spacing:.05em}
+  .annot span{grid-column:2;grid-row:2;font-size:13.5px;color:#5a5f66;line-height:1.8}
+  .annot em{font-style:normal;background:linear-gradient(transparent 65%,rgba(15,159,196,.16) 65%)}
+
+  .collate{margin-top:34px}
+  .collate-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--indigo);padding-bottom:8px}
+  .collate-head h3{font-family:var(--serif);font-size:17px;color:var(--indigo);margin:0;letter-spacing:.14em}
+  .collate-head span{font-size:11px;letter-spacing:.14em;color:var(--muted)}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:52px;padding:22px 0;border-bottom:1px solid var(--sand);position:relative}
+  .pair::after{content:"";position:absolute;left:50%;top:22px;bottom:22px;border-left:1px dashed var(--sand)}
+  .pair .orig{font-family:var(--serif);font-size:14.5px;color:#8e8a7e;line-height:2;padding-right:10px}
+  .pair .orig::before{content:"原句";display:block;font-family:var(--sans);font-size:10px;letter-spacing:.24em;color:#b3afa2;margin-bottom:6px}
+  .pair .fixed{font-family:var(--serif);font-size:15.5px;color:var(--ink);line-height:2;padding-left:10px;border-left:2px solid var(--cyan);margin-left:-2px}
+  .pair .fixed::before{content:"改后";display:block;font-family:var(--sans);font-size:10px;letter-spacing:.24em;color:var(--cyan);margin-bottom:6px}
+
+  .actions{display:flex;align-items:center;gap:28px;padding:26px 0 0 190px;flex-wrap:wrap}
+  .actions .hint{font-size:12px;color:var(--muted);letter-spacing:.04em}
+  .actions .spacer{flex:1}
+  .action-line{font-family:var(--serif);font-size:15px;color:var(--indigo);border-bottom:1px solid var(--indigo);padding-bottom:3px;letter-spacing:.1em}
+  .action-line:hover{color:var(--cyan);border-color:var(--cyan)}
+  .action-quiet{font-size:13px;color:var(--muted);border-bottom:1px solid transparent}
+  .action-quiet:hover{border-color:var(--mist)}
+
+  .lab-switch{position:fixed;right:20px;bottom:18px;z-index:60;display:flex;gap:18px;background:var(--paper);border:1px solid var(--sand);padding:8px 14px;font-family:var(--serif);font-size:12px;letter-spacing:.1em;color:var(--muted)}
+  .lab-switch button{padding:2px 0;border-bottom:1px solid transparent;color:var(--muted)}
+  .lab-switch button.on{color:var(--indigo);border-color:var(--cyan)}
+  .lab-badge{position:fixed;left:0;top:50%;transform:rotate(-90deg) translateX(-50%);transform-origin:left top;font-family:var(--serif);font-size:10px;letter-spacing:.3em;color:var(--muted);z-index:40}
+
+  body[data-view="home"] #view-optimize,body[data-view="optimize"] #view-home{display:none}
+
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes drift{0%{transform:translate3d(0,0,0)}100%{transform:translate3d(-16px,-10px,0)}}
+  .prologue h1,.page-title h1{animation:rise 1s ease both}
+  .lede{animation:rise 1s .12s ease both}
+  .hero-cloud svg{animation:drift 18s ease-in-out infinite alternate}
+
+  @media (max-width:1080px){
+    main{padding:0 34px 60px}
+    .topbar{padding:16px 34px}
+    .prologue{grid-template-columns:54px minmax(0,1fr);gap:24px}
+    .vertical-note{display:none}
+    .hero-cloud{width:320px;right:-30px}
+    .chapter{grid-template-columns:110px minmax(0,1fr);gap:26px}
+    .page-title,.fields,.review{grid-template-columns:110px minmax(0,1fr);gap:26px}
+    .actions{padding-left:136px}
+  }
+  @media (max-width:760px){
+    .topbar{padding:12px 20px;gap:12px}
+    .topbar img{height:38px}
+    .topbar .name{font-size:16px;letter-spacing:.16em}
+    .topbar .sub,.topbar .right a{display:none}
+    .topbar .right{gap:0}
+    .enter{font-size:13px}
+    main{padding:0 20px 56px}
+    .prologue{grid-template-columns:1fr;padding:36px 0 26px;gap:0}
+    .side-rule{display:none}
+    .prologue h1{font-size:37px;line-height:1.4;margin-bottom:18px}
+    .lede{font-size:14.5px}
+    .hero-cloud{width:220px;opacity:.35;right:0;bottom:-20px}
+    .journey{grid-template-columns:1fr 1fr}
+    .stage{padding:16px 16px 18px 0}
+    .stage:nth-child(2){border-right:0}
+    .stage:nth-child(3),.stage:nth-child(4){border-top:1px solid var(--sand)}
+    .stage b{font-size:24px}
+    .chapter{grid-template-columns:1fr;gap:14px;padding:34px 0 20px}
+    .chapter-mark{position:static;display:flex;align-items:baseline;gap:12px}
+    .chapter-mark b{font-size:26px}
+    .chapter-mark span{writing-mode:horizontal-tb;height:auto;margin-top:0;font-size:11px}
+    .chapter-body h2{font-size:25px}
+    .signpost{grid-template-columns:38px 1fr 20px;gap:10px;padding:14px 0}
+    .signpost p{grid-column:2/3;font-size:13px}
+    .signpost:nth-child(n){margin-left:0}
+    .quote-block{font-size:15px;padding-left:18px}
+    .page-title{grid-template-columns:1fr;gap:12px;padding:30px 0 18px}
+    .page-title .label{writing-mode:horizontal-tb;height:auto;font-size:11px}
+    .page-title h1{font-size:29px}
+    .fields{grid-template-columns:1fr;gap:0;padding-top:16px}
+    .field{grid-template-columns:82px minmax(0,1fr);gap:12px}
+    .review{grid-template-columns:1fr;gap:10px}
+    .review-side{position:static;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+    .review-side .big{font-size:44px}
+    .review-side .verdict{margin-top:0}
+    .scale{width:100%}
+    .annot b{font-size:14px}
+    .pair{grid-template-columns:1fr;gap:14px;padding:16px 0}
+    .pair::after{display:none}
+    .pair .orig{padding-right:0}
+    .pair .fixed{padding-left:12px}
+    .actions{padding-left:0;gap:18px}
+    .cta-band{grid-template-columns:1fr;gap:18px;padding-top:30px}
+    .lab-switch{right:10px;bottom:10px}
+    footer{flex-direction:column;gap:6px}
+  }
+</style>
+</head>
+<body data-view="home">
+<div class="lab-badge">方向 C · 云程</div>
+
+<header class="topbar">
+  <img src="/brand/logo.png" alt="丰麟云面 LOGO">
+  <div class="name">丰麟云面</div>
+  <div class="sub">从简历到 OFFER 的四程</div>
+  <div class="right"><a href="#journey">行程</a><a href="#chapters">四程</a><a href="#cta">启程</a><a class="enter" href="#">开始第一程</a></div>
+</header>
+
+<main>
+  <!-- ================= 首页 ================= -->
+  <section id="view-home">
+    <div class="prologue">
+      <div class="side-rule"><span>卷首 · PROLOGUE</span></div>
+      <div>
+        <h1>开口之前，<br>先看见<em>路径</em>。</h1>
+        <p class="lede">把简历、岗位与每一次作答放进同一段旅程：先立卷，再校勘，然后问对，最后把经验留成可回看的批注。丰麟云面不替你回答，只把路照亮。</p>
+        <div class="line"><span>壹 · 立卷</span><i></i><span>四程</span></div>
+        <div class="cta-row">
+          <a class="cta-main" href="#">启程，先立一卷 →</a>
+          <a class="cta-quiet" href="#">看一次完整示例</a>
+        </div>
+      </div>
+      <div class="vertical-note">简历 · 岗位 · 面试 · 复盘<br><b>四程同一卷</b></div>
+      <div class="hero-cloud">
+        <svg viewBox="0 0 420 190" fill="none" stroke="currentColor" stroke-width="1.1">
+          <path d="M22 150c26-4 34-32 62-30 12-34 58-46 80-18 22-26 66-18 70 12 30-8 52 10 52 30 18-2 32 8 34 22H22"/>
+          <path d="M120 150c6-22 26-34 48-30 16-24 52-24 62 2 18-6 34 6 38 22"/>
+          <path d="M300 118c10-10 26-8 30 4 8-2 14 2 16 8" />
+        </svg>
+      </div>
+    </div>
+
+    <div class="journey" id="journey">
+      <a class="stage" href="#"><b>壹</b><h3>立卷</h3><p>选定简历与岗位，先把要去的方向写清楚。</p></a>
+      <a class="stage" href="#"><b>贰</b><h3>校勘</h3><p>逐段校简历，把空话换成可验证的事实。</p></a>
+      <a class="stage" href="#"><b>叁</b><h3>问对</h3><p>按岗位作答，弱处追问，最多两层。</p></a>
+      <a class="stage" href="#"><b>肆</b><h3>留批</h3><p>报告与复盘归档，下一程先看旧批注。</p></a>
+    </div>
+
+    <section class="chapter" id="chapters">
+      <div class="chapter-mark"><b>壹</b><span>先知道自己要去哪</span></div>
+      <div class="chapter-body">
+        <h2>不是所有简历，都要写成同一份。</h2>
+        <p class="note">同一段经历，对着不同岗位，该被看见的部分并不相同。</p>
+        <ul class="signposts">
+          <li class="signpost"><span class="n">01</span><h4>简历优化</h4><p>逐段批注，标出空缺与冗余，给出可执行的改写示范。</p><span class="arrow">→</span></li>
+          <li class="signpost"><span class="n">02</span><h4>JD 匹配</h4><p>把岗位要求拆成条目，逐条对照，列出缺口与优先级。</p><span class="arrow">→</span></li>
+          <li class="signpost"><span class="n">03</span><h4>模拟面试</h4><p>按岗位生成问题，答得浅就继续问，直到说清楚。</p><span class="arrow">→</span></li>
+          <li class="signpost"><span class="n">04</span><h4>面试报告</h4><p>三维评分、原句问题与改写示例，可打印归档。</p><span class="arrow">→</span></li>
+          <li class="signpost"><span class="n">05</span><h4>复盘本</h4><p>记下当场反应与下一步动作，别在同一个地方停两次。</p><span class="arrow">→</span></li>
+          <li class="signpost"><span class="n">06</span><h4>题库</h4><p>按能力项归档问题，随时抽题，标记熟练度。</p><span class="arrow">→</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="chapter">
+      <div class="chapter-mark"><b>贰</b><span>把回答留在纸面上</span></div>
+      <div class="chapter-body">
+        <h2>说过的话，应该留得下来。</h2>
+        <p class="note">一场面试结束后，最可惜的不是答错，而是不知道为什么错。</p>
+        <div class="quote-block">「每一次作答都被拆成结构、内容与表达三段，弱处自动追问，最多两层。报告只记录事实与改法，不替你编造经历。」<span>丰麟云面 · 评分凡例</span></div>
+      </div>
+    </section>
+
+    <div class="cta-band" id="cta">
+      <div><h2>路不长，先从第一程开始。</h2><p>选一份简历，定一个岗位，今天就能走完一次闭环。</p></div>
+      <a class="cta-main" href="#">启程 →</a>
+      <div class="cloud-wash">
+        <svg viewBox="0 0 330 150" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M10 120c22-2 30-26 54-24 10-28 48-38 66-14 18-20 54-14 58 10 24-6 42 8 42 24 14-2 24 6 26 18H10"/>
+          <path d="M96 120c6-18 22-28 40-24 14-18 42-18 50 2 14-4 28 4 30 18"/>
+        </svg>
+      </div>
+    </div>
+
+    <footer><span>丰麟云面 · 云程</span><span>四程同一卷 · 每一步都有批注</span></footer>
+  </section>
+
+  <!-- ================= 简历优化 ================= -->
+  <section id="view-optimize">
+    <div class="page-title">
+      <div class="label">第一程 · 校勘</div>
+      <div>
+        <h1>简历校勘</h1>
+        <p>对着目标岗位，把每一段话校到能站得住。</p>
+        <div class="job-line">目标岗位：Java 后端实习 · 简历 418 字</div>
+      </div>
+    </div>
+
+    <div class="fields">
+      <div></div>
+      <div>
+        <div class="field"><label>目标岗位</label><div class="value">Java 后端实习 · 字节跳动</div></div>
+        <div class="field"><label>简历文本</label><div class="value">校园二手交易平台 / 后端负责人 · 会员积分模块实习</div></div>
+      </div>
+    </div>
+
+    <div class="review">
+      <aside class="review-side">
+        <div class="big">78</div>
+        <div class="of">/ 100 · 内容可用，证据不足</div>
+        <div class="verdict">先补结果，<br>再谈表达。</div>
+        <div class="scale">
+          <div class="bar"></div>
+          <div class="ticks"><span>0</span><span>40</span><span>60</span><span>80</span><span>100</span></div>
+        </div>
+      </aside>
+      <div class="review-body">
+        <h2>四处批注</h2>
+        <p class="sub">只标能改的地方，不替你编造经历。</p>
+        <ol class="annot">
+          <li><b>动作缺主语</b><span>「负责后端开发」看不出边界。改成你独立承担的那一块，并说清团队规模。</span></li>
+          <li><b>结果不可验证</b><span>「更快」「反馈不错」都不是结果。补上加载时间与转化率的前后对比。</span></li>
+          <li><b>技术选型没有理由</b><span>为什么用 Redis、为什么加布隆过滤器，一句话说明取舍即可。</span></li>
+          <li><b>自我评价空泛</b><span><em>「学习能力强，能抗压」</em>删掉，用一段可验证的事实替代。</span></li>
+        </ol>
+
+        <div class="collate">
+          <div class="collate-head"><h3>改稿对照</h3><span>保留原有事实 · 只补证据</span></div>
+          <div class="pair">
+            <div class="orig">做了缓存优化，让页面打开更快，用户反馈不错。</div>
+            <div class="fixed">设计 Redis 缓存层并加布隆过滤器拦截无效请求，商品详情页加载从 3.8s 降到 1.2s，下单转化率四周内由 2.1% 升至 9.4%。</div>
+          </div>
+          <div class="pair">
+            <div class="orig">参与会员积分模块，补了索引，把响应时间从 800ms 降到 90ms。</div>
+            <div class="fixed">独立负责会员积分模块的慢查询治理：补联合索引并将实时汇总改为定时预聚合，P95 从 800ms 降到 90ms，并新增每日对账任务。</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <span class="hint">AI 只给建议，不会自动写入。</span>
+          <span class="spacer"></span>
+          <a class="action-quiet" href="#">导出 Word</a>
+          <a class="action-quiet" href="#">打印归档</a>
+          <a class="action-line" href="#">采纳并保存</a>
+        </div>
+      </div>
+    </div>
+
+    <footer><span>云程 · 第一程</span><span>校勘不是重写，是把事实放回原位</span></footer>
+  </section>
+</main>
+
+<div class="lab-switch">
+  <button data-target="home" class="on">卷首</button>
+  <button data-target="optimize">简历校勘</button>
+</div>
+
+<script>
+  const sw = document.querySelectorAll('.lab-switch button');
+  sw.forEach((b) => b.addEventListener('click', () => {
+    document.body.dataset.view = b.dataset.target;
+    sw.forEach((x) => x.classList.toggle('on', x === b));
+    window.scrollTo(0, 0);
+  }));
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>丰麟云面 · 设计方向样板</title>
+<link rel="icon" href="/brand/logo.png">
+<style>
+  :root{--navy:#0a2a5e;--cyan:#1298c4;--paper:#f6f3ea;--ink:#1b2433;--muted:#6c6a61;--rule:#cdc6b4;--serif:"Songti SC","Noto Serif CJK SC","SimSun",serif;--sans:"PingFang SC","Microsoft YaHei",sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.8}
+  a{color:inherit;text-decoration:none}
+  header{display:flex;align-items:center;gap:16px;padding:22px 44px;border-bottom:1px solid var(--rule)}
+  header img{height:50px}
+  header b{font-family:var(--serif);font-size:19px;letter-spacing:.18em;color:var(--navy)}
+  header span{font-size:11px;letter-spacing:.2em;color:var(--muted);border-left:1px solid var(--rule);padding-left:16px}
+  main{max-width:1100px;margin:0 auto;padding:48px 44px 80px}
+  h1{font-family:var(--serif);font-size:34px;letter-spacing:.08em;color:var(--navy);margin:0 0 10px}
+  .sub{color:var(--muted);margin:0 0 34px;font-size:14px;max-width:38em}
+  .row{display:grid;grid-template-columns:64px 200px 1fr 140px;gap:20px;align-items:center;padding:22px 4px;border-top:1px solid var(--rule);transition:background .2s,padding-left .2s}
+  .row:last-child{border-bottom:1px solid var(--rule)}
+  .row:hover{background:#efebdf;padding-left:12px}
+  .row .idx{font-family:var(--serif);color:var(--cyan);font-size:14px}
+  .row b{font-family:var(--serif);font-size:20px;letter-spacing:.12em;color:var(--navy)}
+  .row p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+  .row .go{font-family:var(--serif);color:var(--navy);text-align:right;font-size:14px}
+  @media (max-width:760px){
+    header{padding:14px 20px}
+    header img{height:40px}
+    header span{display:none}
+    main{padding:30px 20px 60px}
+    h1{font-size:26px}
+    .row{grid-template-columns:32px 1fr;gap:10px;padding:18px 0}
+    .row p{grid-column:2/3}
+    .row .go{display:none}
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="/brand/logo.png" alt="丰麟云面">
+  <b>丰麟云面</b>
+  <span>设计方向样板 · DESIGN LAB</span>
+</header>
+<main>
+  <h1>三套方向，先看气质，再谈铺开。</h1>
+  <p class="sub">每套都包含首页与简历优化两个样板页，可在页面右下角切换。仅用于方向选择，未接入正式页面与接口。</p>
+
+  <a class="row" href="/design-lab/a.html">
+    <span class="idx">A</span>
+    <div><b>云阙</b><p>档案 · 志书 · 朱批</p></div>
+    <div><p>细线、目次、双页对照。把求职过程写成一部可回看的备考志，密度高、语气克制。</p></div>
+    <span class="go">进入 →</span>
+  </a>
+  <a class="row" href="/design-lab/b.html">
+    <span class="idx">B</span>
+    <div><b>鳞巡</b><p>指挥台 · 信号 · 矩阵</p></div>
+    <div><p>深色工作台、数据矩阵与三段对照。把面试拆成可观测的信号，信息密度最高。</p></div>
+    <span class="go">进入 →</span>
+  </a>
+  <a class="row" href="/design-lab/c.html">
+    <span class="idx">C</span>
+    <div><b>云程</b><p>长卷 · 四程 · 校勘</p></div>
+    <div><p>竖排章节、长卷留白与行旅结构。把简历到 offer 讲成一段有节奏的路程。</p></div>
+    <span class="go">进入 →</span>
+  </a>
+</main>
+</body>
+</html>

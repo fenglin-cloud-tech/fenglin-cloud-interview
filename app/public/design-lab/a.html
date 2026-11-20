@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云阙 · 丰麟云面 设计方向 A</title>
+<link rel="icon" href="/brand/logo.png">
+<style>
+  :root{
+    --navy:#0a2a5e; --blue:#0e5a9e; --cyan:#1298c4; --cyan-deep:#0b7a9e;
+    --paper:#f6f3ea; --paper2:#efebdf; --ink:#1b2433; --muted:#6c6a61;
+    --rule:#cdc6b4; --rule-soft:#e0dacb; --white:#fffdf7;
+    --serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","SimSun",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+  /* ---------- 页头 ---------- */
+  .masthead{
+    display:flex;align-items:center;justify-content:space-between;gap:24px;
+    padding:16px 40px 16px 32px;border-bottom:1px solid var(--rule);
+    background:var(--paper);position:relative;z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:14px;min-width:0}
+  .brand img{height:52px;width:auto}
+  .brand-text{display:flex;flex-direction:column;line-height:1.15;border-left:1px solid var(--rule);padding-left:14px}
+  .brand-text b{font-family:var(--serif);font-size:20px;letter-spacing:.18em}
+  .brand-text span{font-size:10px;letter-spacing:.22em;color:var(--muted);margin-top:5px}
+  .nav{display:flex;gap:26px;font-size:13px;color:var(--muted)}
+  .nav a{padding-bottom:3px;border-bottom:1px solid transparent}
+  .nav a:hover{color:var(--navy);border-color:var(--cyan)}
+  .mast-actions{display:flex;align-items:center;gap:18px}
+  .mast-date{font-size:11px;letter-spacing:.16em;color:var(--muted)}
+  .seal-btn{
+    background:var(--navy);color:var(--white);padding:9px 18px;
+    font-size:13px;letter-spacing:.12em;border:1px solid var(--navy);
+    transition:background .2s ease,color .2s ease;
+  }
+  .seal-btn:hover{background:var(--cyan-deep);border-color:var(--cyan-deep)}
+
+  /* ---------- 骨架 ---------- */
+  .layout{display:grid;grid-template-columns:186px minmax(0,1fr);max-width:1480px;margin:0 auto}
+  .index-rail{
+    border-right:1px solid var(--rule);padding:34px 22px 60px 30px;
+    position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
+  }
+  .rail-title{font-size:10px;letter-spacing:.3em;color:var(--muted);margin-bottom:20px}
+  .rail-nav{display:flex;flex-direction:column;gap:2px;font-size:13px}
+  .rail-nav a{display:flex;gap:10px;padding:7px 0;color:var(--muted);border-bottom:1px solid transparent}
+  .rail-nav a i{font-style:normal;font-family:var(--serif);color:var(--cyan-deep);min-width:20px}
+  .rail-nav a:hover{color:var(--navy);border-color:var(--rule)}
+  .rail-foot{margin-top:auto;font-size:11px;letter-spacing:.18em;color:var(--muted);writing-mode:vertical-rl;height:150px}
+  main{min-width:0;padding:0 44px 80px}
+
+  /* ---------- 首页 ---------- */
+  .hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,.75fr);gap:48px;padding:64px 0 42px;border-bottom:1px solid var(--rule)}
+  .kicker{display:flex;align-items:center;gap:12px;font-size:11px;letter-spacing:.28em;color:var(--cyan-deep);margin-bottom:22px}
+  .kicker::before{content:"";width:34px;height:1px;background:var(--cyan);display:block}
+  h1{
+    font-family:var(--serif);font-weight:600;font-size:clamp(38px,4.6vw,60px);
+    line-height:1.3;letter-spacing:.03em;margin:0 0 22px;color:var(--navy);
+  }
+  h1 em{font-style:normal;color:var(--cyan-deep);border-bottom:2px solid var(--cyan);padding-bottom:2px}
+  .lead{max-width:34em;color:#3c4350;font-size:15.5px;margin:0 0 30px}
+  .actions{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .btn-solid{background:var(--navy);color:var(--white);padding:13px 26px;font-size:14px;letter-spacing:.1em;border-bottom:2px solid var(--cyan)}
+  .btn-solid:hover{background:#0c326e}
+  .link-line{font-size:13.5px;color:var(--navy);border-bottom:1px solid var(--rule);padding-bottom:2px}
+  .link-line:hover{border-color:var(--cyan)}
+
+  .notation{border-top:2px solid var(--navy);padding-top:18px}
+  .notation h2{font-family:var(--serif);font-size:14px;letter-spacing:.22em;margin:0 0 14px;color:var(--navy)}
+  .notation dl{margin:0;font-size:13px}
+  .notation .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--rule-soft)}
+  .notation dt{color:var(--muted)}
+  .notation dd{margin:0;font-family:var(--serif);color:var(--navy)}
+  .notation .seal{
+    margin-top:20px;width:62px;height:62px;border:1px solid var(--cyan);color:var(--cyan-deep);
+    display:grid;place-items:center;font-family:var(--serif);font-size:24px;letter-spacing:0;
+  }
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--rule)}
+  .metric{padding:20px 22px 22px 0;border-right:1px solid var(--rule-soft)}
+  .metric:last-child{border-right:0}
+  .metric b{display:block;font-family:var(--serif);font-size:27px;color:var(--navy);letter-spacing:.02em}
+  .metric span{font-size:11.5px;letter-spacing:.12em;color:var(--muted)}
+
+  .section{padding:46px 0 10px}
+  .section-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;border-bottom:1px solid var(--navy);padding-bottom:10px;margin-bottom:0}
+  .section-head h2{font-family:var(--serif);font-size:20px;letter-spacing:.16em;margin:0;color:var(--navy)}
+  .section-head span{font-size:11px;letter-spacing:.2em;color:var(--muted)}
+
+  .entry{
+    display:grid;grid-template-columns:52px minmax(120px,.7fr) minmax(0,1.7fr) 86px 26px;
+    gap:18px;align-items:baseline;padding:16px 4px;border-bottom:1px solid var(--rule-soft);
+    position:relative;transition:background .18s ease,padding-left .18s ease;
+  }
+  .entry::before{content:"";position:absolute;left:0;top:0;bottom:0;width:0;background:var(--cyan);transition:width .18s ease}
+  .entry:hover{background:var(--paper2);padding-left:12px}
+  .entry:hover::before{width:3px}
+  .entry .no{font-family:var(--serif);font-size:13px;color:var(--cyan-deep);letter-spacing:.1em}
+  .entry .name{font-family:var(--serif);font-size:17px;color:var(--navy);letter-spacing:.08em}
+  .entry .desc{font-size:13.5px;color:#4a4f59}
+  .entry .meta{font-size:11.5px;color:var(--muted);text-align:right;letter-spacing:.08em}
+  .entry .go{font-family:var(--serif);color:var(--cyan-deep);text-align:right}
+  .entry:hover .go{color:var(--navy)}
+
+  .process{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:18px;border-top:1px solid var(--rule)}
+  .step{padding:22px 22px 26px 0;border-right:1px solid var(--rule-soft);position:relative}
+  .step:last-child{border-right:0}
+  .step b{font-family:var(--serif);font-size:12px;letter-spacing:.24em;color:var(--cyan-deep);display:block;margin-bottom:8px}
+  .step h3{font-family:var(--serif);font-size:17px;margin:0 0 8px;color:var(--navy);letter-spacing:.08em}
+  .step p{margin:0;font-size:13px;color:var(--muted);line-height:1.7}
+  .step::after{content:"";position:absolute;left:0;top:-1px;width:38px;height:1px;background:var(--cyan)}
+
+  .cta{margin-top:54px;border:1px solid var(--rule);border-top:2px solid var(--navy);padding:30px 32px;display:flex;justify-content:space-between;align-items:center;gap:24px;background:var(--white)}
+  .cta h2{font-family:var(--serif);font-size:24px;margin:0 0 6px;color:var(--navy);letter-spacing:.08em}
+  .cta p{margin:0;color:var(--muted);font-size:13px}
+
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--rule);display:flex;justify-content:space-between;gap:16px;font-size:11.5px;color:var(--muted);letter-spacing:.08em}
+
+  /* ---------- 简历优化 ---------- */
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:38px 0 18px;border-bottom:2px solid var(--navy)}
+  .page-head .crumb{font-size:11px;letter-spacing:.2em;color:var(--muted);margin-bottom:10px}
+  .page-head h1{font-size:32px;margin:0;letter-spacing:.08em}
+  .page-head .stamp{font-family:var(--serif);font-size:11px;letter-spacing:.2em;color:var(--cyan-deep);border:1px solid var(--cyan);padding:6px 10px}
+
+  .opt-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.8fr);gap:0;border-bottom:1px solid var(--rule)}
+  .doc{padding:26px 38px 30px 0;border-right:1px solid var(--rule)}
+  .doc-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+  .doc-head h2{font-family:var(--serif);font-size:15px;letter-spacing:.2em;margin:0;color:var(--navy)}
+  .doc-head span{font-size:11px;color:var(--muted);letter-spacing:.1em}
+  .doc-body{border-top:1px solid var(--rule-soft);padding-top:14px;font-family:var(--serif);font-size:14.5px;line-height:2.15;color:#2c3340}
+  .doc-body p{margin:0 0 10px;display:grid;grid-template-columns:26px 1fr;gap:10px}
+  .doc-body p i{font-style:normal;font-size:10.5px;color:#9a9587;font-family:var(--sans);padding-top:6px}
+  .mark{background:linear-gradient(transparent 62%,rgba(18,152,196,.18) 62%);border-bottom:1px solid rgba(18,152,196,.5)}
+  .mark.warn{background:linear-gradient(transparent 62%,rgba(198,146,42,.2) 62%);border-color:rgba(180,128,32,.55)}
+
+  .margin{padding:26px 0 30px 30px}
+  .score{border-bottom:1px solid var(--rule);padding-bottom:16px;margin-bottom:16px;display:flex;align-items:flex-end;gap:14px}
+  .score b{font-family:var(--serif);font-size:58px;line-height:.9;color:var(--navy)}
+  .score span{font-size:12px;color:var(--muted);padding-bottom:6px}
+  .score em{font-style:normal;margin-left:auto;font-family:var(--serif);font-size:13px;color:var(--cyan-deep);border-bottom:1px solid var(--cyan);padding-bottom:2px}
+  .notes{list-style:none;margin:0;padding:0;counter-reset:n}
+  .notes li{counter-increment:n;display:grid;grid-template-columns:24px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--rule-soft);font-size:13.5px;line-height:1.7}
+  .notes li::before{content:counter(n,decimal-leading-zero);font-family:var(--serif);font-size:11px;color:var(--cyan-deep);padding-top:3px;grid-column:1;grid-row:1/span 2}
+  .notes b{grid-column:2;grid-row:1;display:block;font-family:var(--serif);font-size:13.5px;color:var(--navy);margin-bottom:2px;letter-spacing:.06em}
+  .notes span{grid-column:2;grid-row:2;color:#4c515b}
+
+  .compare{padding:34px 0 10px}
+  .compare-head{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--navy);padding-bottom:10px}
+  .compare-head h2{font-family:var(--serif);font-size:18px;letter-spacing:.16em;margin:0;color:var(--navy)}
+  .compare-head span{font-size:11px;color:var(--muted);letter-spacing:.12em}
+  .compare-body{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--rule)}
+  .col{padding:20px 28px 24px 0;border-right:1px solid var(--rule-soft)}
+  .col:last-child{border-right:0;padding-left:28px;padding-right:0}
+  .col h3{font-size:11px;letter-spacing:.24em;color:var(--muted);margin:0 0 10px}
+  .col p{margin:0;font-family:var(--serif);font-size:14.5px;line-height:2;color:#2c3340}
+  .col.after p{border-left:2px solid var(--cyan);padding-left:14px}
+  .col.after h3{color:var(--cyan-deep)}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 0 0;flex-wrap:wrap}
+  .toolbar .hint{font-size:12px;color:var(--muted)}
+  .toolbar .btns{display:flex;gap:12px}
+  .btn-ghost{border:1px solid var(--rule);padding:10px 18px;font-size:13px;color:var(--navy);background:var(--white)}
+  .btn-ghost:hover{border-color:var(--cyan)}
+
+  /* ---------- 样板切换 ---------- */
+  .lab-switch{
+    position:fixed;right:22px;bottom:22px;z-index:60;display:flex;gap:2px;
+    background:var(--navy);padding:4px;box-shadow:0 12px 30px -18px rgba(0,0,0,.7);
+  }
+  .lab-switch button{padding:8px 14px;font-size:12px;letter-spacing:.1em;color:#c9d6e6}
+  .lab-switch button.on{background:var(--paper);color:var(--navy)}
+  .lab-badge{position:fixed;left:0;top:50%;transform:rotate(-90deg) translateX(-50%);transform-origin:left top;font-size:10px;letter-spacing:.3em;color:var(--muted);z-index:50}
+
+  body[data-view="home"] #view-optimize,
+  body[data-view="optimize"] #view-home{display:none}
+
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes draw{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .hero h1,.page-head h1{animation:fade .7s ease both}
+  .hero .lead{animation:fade .7s .08s ease both}
+  .section-head{border-bottom-color:var(--navy)}
+  .section-head::after{content:"";display:block}
+
+  @media (max-width:1100px){
+    .layout{grid-template-columns:150px minmax(0,1fr)}
+    main{padding:0 30px 64px}
+    .entry{grid-template-columns:42px minmax(100px,.8fr) minmax(0,1.6fr) 26px}
+    .entry .meta{display:none}
+  }
+  @media (max-width:860px){
+    .masthead{padding:14px 20px;gap:14px}
+    .brand img{height:44px}
+    .brand-text b{font-size:17px}
+    .nav,.mast-date{display:none}
+    .layout{grid-template-columns:1fr}
+    .index-rail{display:none}
+    main{padding:0 20px 60px}
+    .hero{grid-template-columns:1fr;gap:30px;padding:38px 0 30px}
+    h1{font-size:34px}
+    .metrics{grid-template-columns:1fr 1fr}
+    .metric:nth-child(2){border-right:0}
+    .metric:nth-child(3),.metric:nth-child(4){border-top:1px solid var(--rule-soft)}
+    .entry{grid-template-columns:34px 1fr 22px;gap:10px;padding:13px 2px}
+    .entry .desc{grid-column:2/3;font-size:13px;color:var(--muted)}
+    .entry .name{font-size:16px}
+    .process{grid-template-columns:1fr 1fr}
+    .step:nth-child(2){border-right:0}
+    .step:nth-child(3),.step:nth-child(4){border-top:1px solid var(--rule-soft)}
+    .cta{flex-direction:column;align-items:flex-start;padding:24px}
+    .page-head{flex-direction:column;align-items:flex-start;gap:12px;padding-top:26px}
+    .page-head h1{font-size:26px}
+    .opt-grid{grid-template-columns:1fr}
+    .doc{padding-right:0;border-right:0;border-bottom:1px solid var(--rule)}
+    .margin{padding-left:0;padding-top:20px}
+    .doc-body p{grid-template-columns:20px 1fr;font-size:14px}
+    .compare-body{grid-template-columns:1fr}
+    .col{padding-right:0;border-right:0;border-bottom:1px solid var(--rule-soft)}
+    .col:last-child{padding-left:0;padding-top:18px}
+    .lab-switch{right:12px;bottom:12px}
+    footer{flex-direction:column;gap:6px}
+  }
+</style>
+</head>
+<body data-view="home">
+<div class="lab-badge">方向 A · 云阙</div>
+
+<header class="masthead">
+  <div class="brand">
+    <img src="/brand/logo.png" alt="丰麟云面 LOGO">
+    <div class="brand-text"><b>丰麟云面</b><span>FENGLIN · CLOUD INTERVIEW</span></div>
+  </div>
+  <nav class="nav">
+    <a href="#modules">功能目次</a><a href="#process">训练次第</a><a href="#method">凡例</a><a href="#cta">开卷</a>
+  </nav>
+  <div class="mast-actions">
+    <span class="mast-date">二〇二六 · 冬</span>
+    <button class="seal-btn">开卷练习</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="index-rail">
+    <div class="rail-title">目录 INDEX</div>
+    <div class="rail-nav">
+      <a href="#"><i>壹</i>卷首</a>
+      <a href="#modules"><i>贰</i>功能目次</a>
+      <a href="#process"><i>叁</i>训练次第</a>
+      <a href="#method"><i>肆</i>评分凡例</a>
+      <a href="#cta"><i>伍</i>开卷</a>
+    </div>
+    <div class="rail-foot">第 01 卷 · 求职备考志</div>
+  </aside>
+
+  <main id="main">
+    <!-- ================= 首页 ================= -->
+    <section id="view-home">
+      <div class="hero">
+        <div>
+          <div class="kicker">AI 面试训练 · 有据可查</div>
+          <h1>把每一次开口，<br>练成<em>有据可查</em>的进步。</h1>
+          <p class="lead">以目标岗位为纲，把简历、JD、模拟面试与复盘编成一部可回看的备考志。每一句回答都有出处，每一次修改都有批注。</p>
+          <div class="actions">
+            <button class="seal-btn">开始第一次模拟</button>
+            <a class="link-line" href="#modules">翻阅功能目次 →</a>
+          </div>
+        </div>
+        <aside class="notation">
+          <h2>凡例</h2>
+          <dl>
+            <div class="row"><dt>训练依据</dt><dd>简历 × JD</dd></div>
+            <div class="row"><dt>评分维度</dt><dd>结构 / 内容 / 表达</dd></div>
+            <div class="row"><dt>追问深度</dt><dd>最多两层</dd></div>
+            <div class="row"><dt>结果留存</dt><dd>报告 · 复盘 · 题库</dd></div>
+          </dl>
+          <div class="seal">云</div>
+        </aside>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><b>三 维</b><span>逐题评分，不取平均印象</span></div>
+        <div class="metric"><b>两 层</b><span>弱回答自动追问到底</span></div>
+        <div class="metric"><b>六 则</b><span>从简历到复盘闭环</span></div>
+        <div class="metric"><b>留 痕</b><span>每场面试可回看可打印</span></div>
+      </div>
+
+      <section class="section" id="modules">
+        <div class="section-head"><h2>功能目次</h2><span>卷三 · 共六则</span></div>
+        <a class="entry" href="#"><span class="no">01</span><span class="name">简历优化</span><span class="desc">逐段批注，标出空缺与冗余，给出可执行的改写示范</span><span class="meta">约 12 分钟</span><span class="go">→</span></a>
+        <a class="entry" href="#"><span class="no">02</span><span class="name">JD 匹配</span><span class="desc">把岗位要求拆成条目，逐条对照简历，列出缺口与优先级</span><span class="meta">约 5 分钟</span><span class="go">→</span></a>
+        <a class="entry" href="#"><span class="no">03</span><span class="name">模拟面试</span><span class="desc">按岗位生成问题，弱回答触发追问，最多两层</span><span class="meta">约 20 分钟</span><span class="go">→</span></a>
+        <a class="entry" href="#"><span class="no">04</span><span class="name">面试报告</span><span class="desc">三维评分、原句问题与改写示例，支持打印归档</span><span class="meta">自动生成</span><span class="go">→</span></a>
+        <a class="entry" href="#"><span class="no">05</span><span class="name">复盘本</span><span class="desc">记下当场反应与下一步动作，避免同一个坑踩两次</span><span class="meta">约 8 分钟</span><span class="go">→</span></a>
+        <a class="entry" href="#"><span class="no">06</span><span class="name">题库</span><span class="desc">按能力项归档问题，随时抽题自测，标记熟练度</span><span class="meta">随时</span><span class="go">→</span></a>
+      </section>
+
+      <section class="section" id="process">
+        <div class="section-head"><h2>训练次第</h2><span>卷四 · 四步成篇</span></div>
+        <div class="process">
+          <div class="step"><b>第一步</b><h3>立卷</h3><p>选定简历与目标岗位，建立本次训练的对照基准。</p></div>
+          <div class="step"><b>第二步</b><h3>校勘</h3><p>逐段优化简历，补齐量化结果与个人贡献。</p></div>
+          <div class="step"><b>第三步</b><h3>问对</h3><p>模拟面试按岗位发问，弱处追问，练到答得下去。</p></div>
+          <div class="step"><b>第四步</b><h3>朱批</h3><p>复盘报告与批注归档，下一次开卷先看旧账。</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="method">
+        <div class="section-head"><h2>评分凡例</h2><span>卷五 · 三维取分</span></div>
+        <div class="compare-body" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="col"><h3>结构</h3><p>是否按情境、任务、行动、结果展开；层次是否清楚。</p></div>
+          <div class="col"><h3>内容</h3><p>是否有具体事实、量化结果与个人贡献，是否切题。</p></div>
+          <div class="col"><h3>表达</h3><p>是否啰嗦、口癖多、时间分配失衡；重点是否前置。</p></div>
+        </div>
+      </section>
+
+      <section class="cta" id="cta">
+        <div><h2>先立一卷，再谈发挥。</h2><p>从一份简历和一个岗位开始，今天就能完成第一次闭环。</p></div>
+        <button class="seal-btn">开卷练习</button>
+      </section>
+
+      <footer><span>丰麟云面 · 求职备考志</span><span>每一句回答，都值得有出处</span></footer>
+    </section>
+
+    <!-- ================= 简历优化 ================= -->
+    <section id="view-optimize">
+      <div class="page-head">
+        <div>
+          <div class="crumb">卷三 · 功能目次 / 01 简历优化</div>
+          <h1>简历优化 · 批注本</h1>
+        </div>
+        <div class="stamp">对照岗位：Java 后端实习</div>
+      </div>
+
+      <div class="opt-grid">
+        <div class="doc">
+          <div class="doc-head"><h2>原稿</h2><span>共 6 段 · 418 字</span></div>
+          <div class="doc-body">
+            <p><i>01</i><span>教育背景：丰麟大学，计算机科学与技术，本科，2022.09—2026.06，GPA 3.7/4.0。</span></p>
+            <p><i>02</i><span>项目经历：校园二手交易平台，<span class="mark warn">负责后端开发</span>，使用 Java、Spring Boot 与 MySQL。</span></p>
+            <p><i>03</i><span><span class="mark warn">做了缓存优化</span>，让页面打开更快，<span class="mark warn">用户反馈不错</span>。</span></p>
+            <p><i>04</i><span>实习经历：某互联网公司，参与会员积分模块，<span class="mark">补了索引，把响应时间从 800ms 降到 90ms</span>。</span></p>
+            <p><i>05</i><span>技能：Java、Spring Boot、MySQL、Redis、Git、Docker。</span></p>
+            <p><i>06</i><span>自我评价：学习能力强，沟通顺畅，能抗压。</span></p>
+          </div>
+        </div>
+        <aside class="margin">
+          <div class="score"><b>78</b><span>/ 100 · 内容尚可，证据不足</span><em>改写优先级：高</em></div>
+          <ol class="notes">
+            <li><b>动作缺主语</b><span>「负责后端开发」看不出你具体做了什么，改成你独立承担的那一块。</span></li>
+            <li><b>结果无量化</b><span>「更快」「反馈不错」不可验证，补上加载时间与转化率的前后对比。</span></li>
+            <li><b>技术选型无理由</b><span>为什么用 Redis、为什么用布隆过滤器，一句话说明取舍即可。</span></li>
+            <li><b>自我评价空泛</b><span>删掉形容词，用一段可验证的事实替代。</span></li>
+          </ol>
+        </aside>
+      </div>
+
+      <div class="compare">
+        <div class="compare-head"><h2>改稿对照</h2><span>原句 / 改写 · 保留原有事实</span></div>
+        <div class="compare-body">
+          <div class="col">
+            <h3>原句</h3>
+            <p>做了缓存优化，让页面打开更快，用户反馈不错。</p>
+          </div>
+          <div class="col after">
+            <h3>改写</h3>
+            <p>设计 Redis 缓存层并加布隆过滤器拦截无效请求，商品详情页加载从 3.8s 降到 1.2s，下单转化率四周内由 2.1% 升至 9.4%。</p>
+          </div>
+        </div>
+        <div class="compare-body">
+          <div class="col">
+            <h3>原句</h3>
+            <p>参与会员积分模块，补了索引，把响应时间从 800ms 降到 90ms。</p>
+          </div>
+          <div class="col after">
+            <h3>改写</h3>
+            <p>独立负责会员积分模块的慢查询治理：补联合索引并将实时汇总改为定时预聚合，P95 从 800ms 降到 90ms，并新增每日对账任务。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <span class="hint">AI 只给建议，不会自动写入；确认后再保存。</span>
+        <div class="btns">
+          <button class="btn-ghost">导出 Word</button>
+          <button class="btn-ghost">打印归档</button>
+          <button class="seal-btn">采纳并保存</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="lab-switch">
+  <button data-target="home" class="on">首页</button>
+  <button data-target="optimize">简历优化</button>
+</div>
+
+<script>
+  const sw = document.querySelectorAll('.lab-switch button');
+  sw.forEach((b) => b.addEventListener('click', () => {
+    document.body.dataset.view = b.dataset.target;
+    sw.forEach((x) => x.classList.toggle('on', x === b));
+    window.scrollTo(0, 0);
+  }));
+</script>
+</body>
+</html>

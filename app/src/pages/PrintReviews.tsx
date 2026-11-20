@@ -47,7 +47,10 @@ export function PrintReviews() {
       </div>
       <article className="print-sheet">
         <div className="print-head">
-          <span>丰麟云面 · 复盘记录</span>
+          <span className="print-brand">
+            <img src="/brand/logo.png" alt="丰麟云面" />
+            丰麟云面 · 复盘记录
+          </span>
           <span>{new Date().toLocaleDateString('zh-CN')}</span>
         </div>
         {error && <p className="print-error">{error}</p>}

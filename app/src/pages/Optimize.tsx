@@ -250,39 +250,86 @@ export function Optimize() {
       />
 
       <Card className="ctx-card">
-        <div className="ctx-grid">
-          <Field label="使用简历">
-            <select className="input" value={resumeId ?? ''} onChange={(e) => switchResume(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">未选择</option>
-              {resumes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="目标岗位">
-            <select className="input" value={jobId ?? ''} onChange={(e) => switchJob(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">不关联</option>
-              {jobs.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {j.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="岗位名称（可手填）">
-            <input className="input" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="例如：Java 后端实习" />
-          </Field>
+        <div className="workbench-head">
+          <span>
+            <strong>WORKBENCH</strong> · 简历优化工作台
+          </span>
+          <span>JD / 原稿 / 建议</span>
         </div>
-        <Field
-          label="本次分析使用的简历文本"
-          counter={<span>{resumeText.replace(/\s/g, '').length} 字</span>}
-          hint="默认带入所选简历，也可以临时粘贴另一版；此处修改不会覆盖原简历，除非你另存新版本。"
-        >
-          <textarea className="textarea mono" rows={10} value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
-        </Field>
-        {!current && <Callout tone="warn">还没有简历。先去「模板库」生成一份，或到「我的简历」粘贴文本。</Callout>}
+        <div className="workbench-grid">
+          <div className="wb-col">
+            <div className="wb-col-head">
+              <strong>01</strong> JD <em>目标岗位</em>
+            </div>
+            <Field label="目标岗位">
+              <select className="input" value={jobId ?? ''} onChange={(e) => switchJob(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">不关联</option>
+                {jobs.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="岗位名称（可手填）">
+              <input className="input" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="例如：Java 后端实习" />
+            </Field>
+            <Field label="JD 原文" counter={<span>{jd.replace(/\s/g, '').length} 字</span>} hint="建议包含「岗位职责」和「任职要求」两部分。">
+              <textarea className="textarea" rows={8} value={jd} onChange={(e) => setJd(e.target.value)} placeholder="把招聘启事整段粘进来…" />
+            </Field>
+          </div>
+
+          <div className="wb-col">
+            <div className="wb-col-head">
+              <strong>02</strong> 原稿 <em>当前简历</em>
+            </div>
+            <Field label="使用简历">
+              <select className="input" value={resumeId ?? ''} onChange={(e) => switchResume(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">未选择</option>
+                {resumes.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              label="本次分析使用的简历文本"
+              counter={<span>{resumeText.replace(/\s/g, '').length} 字</span>}
+              hint="默认带入所选简历，可临时粘贴另一版；此处修改不会覆盖原简历，除非另存新版本。"
+            >
+              <textarea className="textarea mono" rows={12} value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
+            </Field>
+            {!current && <Callout tone="warn">还没有简历。先去「模板库」生成一份，或到「我的简历」粘贴文本。</Callout>}
+          </div>
+
+          <div className="wb-col">
+            <div className="wb-col-head">
+              <strong>03</strong> 建议 <em>本次产出</em>
+            </div>
+            <div className="wb-metric">
+              <span>修改建议</span>
+              <strong>{sug ? sug.sections.reduce((n, s) => n + s.items.length, 0) : '—'}</strong>
+            </div>
+            <div className="wb-metric">
+              <span>JD 匹配度</span>
+              <strong>{match ? match.score : '—'}</strong>
+            </div>
+            <div className="wb-metric">
+              <span>历史诊断</span>
+              <strong>{history.length}</strong>
+            </div>
+            <div className="wb-actions">
+              <Button variant="ink" onClick={() => void runSuggestions()} loading={sugLoading}>
+                生成修改建议
+              </Button>
+              <Button onClick={() => void runMatch()} loading={matchLoading}>
+                开始匹配分析
+              </Button>
+            </div>
+            <p className="wb-note">建议只基于原文改写法，不编造数据；先补齐原稿再做 JD 对标更准。</p>
+          </div>
+        </div>
       </Card>
 
       <Tabs
@@ -300,9 +347,7 @@ export function Optimize() {
         <div className="stack">
           <div className="advice-toolbar">
             <div className="muted small">按板块给出修改建议，每条都说明为什么改；建议不会编造你原文没有的数据。</div>
-            <Button variant="ink" onClick={() => void runSuggestions()} loading={sugLoading}>
-              生成修改建议
-            </Button>
+            <span className="mono small muted">在 03 · 建议栏触发生成</span>
           </div>
 
           {sugLoading && <Loading label="正在逐板块阅读简历（后台生成，通常 20-40 秒）" lines={4} />}
@@ -378,10 +423,8 @@ export function Optimize() {
 
       {tab === 'match' && (
         <div className="stack">
-          <Card title="粘贴 JD" subtitle="建议包含「岗位职责」和「任职要求」两部分">
-            <Field label="JD 原文" counter={<span>{jd.replace(/\s/g, '').length} 字</span>}>
-              <textarea className="textarea" rows={10} value={jd} onChange={(e) => setJd(e.target.value)} placeholder="把招聘启事整段粘进来…" />
-            </Field>
+          <Card title="本次 JD" subtitle="在 01 · JD 栏修改原文，回到这里重新分析">
+            <div className="job-jd">{jd || '（尚未填写 JD）'}</div>
             <div className="row between mt-12 wrap gap-8">
               <span className="muted small">分析结果会保存到历史，可对比多次投递的差距。</span>
               <Button variant="ink" onClick={() => void runMatch()} loading={matchLoading}>
