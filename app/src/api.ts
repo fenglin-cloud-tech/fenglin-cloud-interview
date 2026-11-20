@@ -124,6 +124,11 @@ export const api = {
   updateJob: (id: number, body: { title?: string; company?: string; jd?: string }) =>
     put<{ job: Job }>(`/jobs/${id}`, body),
   deleteJob: (id: number) => del<{ ok: boolean }>(`/jobs/${id}`),
+  fetchJd: (url: string) =>
+    post<
+      | { ok: true; jd: string; title: string; finalUrl: string; httpStatus: number; chars: number; truncated: boolean }
+      | { ok: false; code: string; message: string }
+    >('/jobs/fetch-jd', { url }),
 
   suggestions: (body: { resumeText: string; jobTitle: string }) =>
     post<{ jobId: string; status: 'pending' }>('/ai/suggestions', body),

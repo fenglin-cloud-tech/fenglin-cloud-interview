@@ -5,6 +5,7 @@ import { buildDocx } from '../docx-export.js';
 import { ensureReviewTasks } from '../review-schedule.js';
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { env, hasApiKey } from '../env.js';
+import { fetchJdFromUrl } from '../jd-fetch.js';
 
 export const coreRouter = Router();
 
@@ -158,6 +159,28 @@ coreRouter.put('/jobs/:id', (req, res) => {
   );
   res.json({ job: jobRow(id) });
 });
+
+coreRouter.post(
+  '/jobs/fetch-jd',
+  ah(async (req, res) => {
+    const url = str(req.body?.url, 2000).trim();
+    if (!url) {
+      res.json({ ok: false, code: 'URL_INVALID', message: '请先粘贴招聘页面链接' });
+      return;
+    }
+    try {
+      const result = await fetchJdFromUrl(url);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      // 抓取失败属于可预期的业务结果，用 200 + ok:false 返回，避免浏览器控制台出现网络错误噪音。
+      if (e instanceof HttpError) {
+        res.json({ ok: false, code: e.code, message: e.message });
+        return;
+      }
+      throw e;
+    }
+  }),
+);
 
 coreRouter.delete('/jobs/:id', (req, res) => {
   const id = idOf(req);

@@ -16,6 +16,10 @@ export function Jobs() {
   const [confirming, setConfirming] = useState<Job | null>(null);
   const [form, setForm] = useState({ title: '', company: '', jd: '' });
   const [saving, setSaving] = useState(false);
+  const [jdUrl, setJdUrl] = useState('');
+  const [jdFetching, setJdFetching] = useState(false);
+  const [jdMsg, setJdMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [jdUndo, setJdUndo] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -29,12 +33,44 @@ export function Jobs() {
   const openCreate = () => {
     setForm({ title: '', company: '', jd: '' });
     setEditing(null);
+    setJdUrl('');
+    setJdMsg(null);
+    setJdUndo(null);
     setOpen(true);
   };
   const openEdit = (j: Job) => {
     setForm({ title: j.title, company: j.company, jd: j.jd });
     setEditing(j);
+    setJdUrl('');
+    setJdMsg(null);
+    setJdUndo(null);
     setOpen(true);
+  };
+
+  const fetchJd = async () => {
+    const raw = jdUrl.trim();
+    if (!raw) return toast('请先粘贴招聘页面链接', 'err');
+    setJdFetching(true);
+    setJdMsg(null);
+    const prev = form.jd;
+    try {
+      const r = await api.fetchJd(raw);
+      if (!r.ok) {
+        setJdMsg({ tone: 'err', text: r.message });
+        return;
+      }
+      setForm((f) => ({ ...f, jd: r.jd }));
+      setJdUndo(prev.trim() ? prev : null);
+      const label = r.title ? `《${r.title.slice(0, 36)}》` : '';
+      setJdMsg({
+        tone: 'ok',
+        text: `已抓取${label} ${r.chars} 字${r.truncated ? '（超长部分已截断）' : ''}，请核对后再保存，未写入数据库。`,
+      });
+    } catch (e) {
+      setJdMsg({ tone: 'err', text: e instanceof ApiError ? e.message : '抓取失败，请直接粘贴 JD' });
+    } finally {
+      setJdFetching(false);
+    }
   };
 
   const save = async () => {
@@ -167,6 +203,51 @@ export function Jobs() {
               placeholder="可选"
             />
           </Field>
+        </div>
+        <div className="jd-import">
+          <div className="jd-import-head">
+            <span className="jd-import-label">从招聘页面抓取</span>
+            <span className="jd-import-note">可选 · 抓取后仍可编辑</span>
+          </div>
+          <div className="jd-import-row">
+            <input
+              className="input"
+              value={jdUrl}
+              onChange={(e) => setJdUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void fetchJd();
+                }
+              }}
+              placeholder="粘贴招聘页面链接，例如 https://jobs.xxx.com/..."
+              aria-label="招聘页面链接"
+            />
+            <Button size="sm" variant="ghost" onClick={() => void fetchJd()} loading={jdFetching}>
+              解析链接
+            </Button>
+          </div>
+          <p className="jd-import-hint">
+            由服务端抓取公开页面正文：仅支持 http/https、10 秒超时、1.5 MB 上限；内网与登录页会被拒绝。抓取结果先填入下方，确认后再保存。
+          </p>
+          {jdMsg && (
+            <div className={`jd-import-msg ${jdMsg.tone}`} role="status">
+              <span>{jdMsg.text}</span>
+              {jdMsg.tone === 'ok' && jdUndo !== null && (
+                <button
+                  type="button"
+                  className="jd-undo"
+                  onClick={() => {
+                    setForm((f) => ({ ...f, jd: jdUndo }));
+                    setJdUndo(null);
+                    setJdMsg(null);
+                  }}
+                >
+                  撤销替换
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <Field label="JD 原文" hint="建议把「岗位职责」「任职要求」都粘进来，至少 50 字">
           <textarea

@@ -2371,6 +2371,98 @@ select.input {
   color: var(--muted);
 }
 
+/* 招聘链接抓取：与现有表单同一套描边 + 靛青提示 */
+.jd-import {
+  border: 1px dashed var(--line-3);
+  background: var(--note-bg);
+  padding: 11px 12px 10px;
+  margin-bottom: 14px;
+}
+
+.jd-import-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.jd-import-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.jd-import-note {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.jd-import-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.jd-import-row .input {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+}
+
+.jd-import-hint {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.jd-import-msg {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-left: 2px solid var(--line-3);
+  background: var(--panel);
+}
+
+.jd-import-msg.ok {
+  border-left-color: var(--cyan);
+  color: var(--cyan-ink);
+}
+
+.jd-import-msg.err {
+  border-left-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.jd-undo {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--cyan-ink);
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+@media (max-width: 520px) {
+  .jd-import-row {
+    flex-wrap: wrap;
+  }
+  .jd-import-row .input {
+    flex-basis: 100%;
+  }
+}
+
 /* ============================================================
    页面：简历优化（三栏工作台）
    ============================================================ */
