@@ -179,7 +179,7 @@ export function InterviewReport() {
               <details key={t.id} className="qa-item">
                 <summary>
                   <span className="qa-q">
-                    {t.depth > 0 && <Chip tone="red">追问 {t.depth}</Chip>}
+                    {t.depth > 0 && <Chip tone="ink">追问 {t.depth}</Chip>}
                     {t.question}
                   </span>
                   <span className={`score-dot s${(t.score ?? 0) >= 80 ? '1' : (t.score ?? 0) >= 60 ? '2' : '3'}`}>

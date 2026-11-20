@@ -81,7 +81,9 @@ export function Layout() {
             <div className="brand-sub">求职陪练 · 闭环训练</div>
           </div>
           <button className="icon-btn sidebar-close" onClick={() => setOpen(false)} aria-label="收起菜单">
-            ✕
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
           </button>
         </div>
 
@@ -124,7 +126,9 @@ export function Layout() {
         )}
         <header className="topbar">
           <button className="icon-btn menu-btn" onClick={() => setOpen(true)} aria-label="打开菜单">
-            ☰
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
+            </svg>
           </button>
           <img className="topbar-logo" src="/brand/logo.png" alt="丰麟云面" />
           <div className="topbar-title">

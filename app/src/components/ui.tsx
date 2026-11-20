@@ -131,6 +131,29 @@ export function Stamp({ children, tone = 'red' }: { children: ReactNode; tone?: 
 
 /* ---------------- 状态 ---------------- */
 
+const EMPTY_ICONS: Record<string, ReactNode> = {
+  '○': <circle cx="10" cy="10" r="6" />,
+  '✎': <path d="M4 16l1-4 9-9 3 3-9 9-4 1zM12 5l3 3" />,
+  '▤': (
+    <>
+      <rect x="3.5" y="4" width="13" height="4" rx="1" />
+      <rect x="3.5" y="11" width="13" height="5" rx="1" />
+    </>
+  ),
+  '◎': (
+    <>
+      <circle cx="10" cy="10" r="6.5" />
+      <circle cx="10" cy="10" r="2" />
+    </>
+  ),
+  '◷': (
+    <>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6v4.3l2.8 1.5" />
+    </>
+  ),
+};
+
 export function EmptyState({
   title,
   desc,
@@ -142,10 +165,26 @@ export function EmptyState({
   action?: ReactNode;
   icon?: ReactNode;
 }) {
+  const glyph = typeof icon === 'string' ? EMPTY_ICONS[icon] : null;
   return (
     <div className="empty">
       <div className="empty-icon" aria-hidden>
-        {icon}
+        {glyph ? (
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {glyph}
+          </svg>
+        ) : (
+          icon
+        )}
       </div>
       <h3>{title}</h3>
       {desc && <p>{desc}</p>}
@@ -323,7 +362,9 @@ export function Modal({
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="关闭">
-            ✕
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
           </button>
         </div>
         <div className="modal-body">{children}</div>

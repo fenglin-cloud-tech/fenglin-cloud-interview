@@ -95,7 +95,6 @@ export function Home() {
           </div>
         </div>
         <div className="hero-side">
-          <div className="hero-seal">闭环 · LOOP</div>
           <div className="chain-label">CHAIN / 五段链路</div>
           <ol className="flow">
             {[
