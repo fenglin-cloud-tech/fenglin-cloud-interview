@@ -177,6 +177,7 @@ function pathLabel(path: string): string {
     ['/templates/', '模板库 / 引导填写'],
     ['/interviews/', '模拟面试 / 考场'],
     ['/templates', '模板库'],
+    ['/import', '简历导入'],
     ['/resumes', '我的简历'],
     ['/jobs', '目标岗位'],
     ['/optimize', '简历优化'],

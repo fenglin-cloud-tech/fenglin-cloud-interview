@@ -65,14 +65,6 @@ export function Home() {
         eyebrow="训练台 · 闭环起点"
         title="把不确定的面试，练成可复现的流程"
         desc="从一份简历出发：诊断差距 → 针对追问 → 模拟面试 → 复盘沉淀 → 再从题库反练。每一步的结果都会喂给下一步。"
-        actions={
-          <>
-            <Button variant="ink" onClick={() => navigate('/interviews')}>
-              开始模拟面试
-            </Button>
-            <Button onClick={() => navigate('/templates')}>用模板起草简历</Button>
-          </>
-        }
       />
 
       <section className="hero">
@@ -89,6 +81,14 @@ export function Home() {
           <p className="hero-desc">
             丰麟云面不改你的经历，只帮你说清楚：这段项目到底做了什么、数据从哪来、你个人贡献了什么。
           </p>
+          <div className="hero-actions">
+            <Button variant="ink" size="lg" onClick={() => navigate('/interviews')}>
+              开始模拟面试
+            </Button>
+            <Button size="lg" onClick={() => navigate('/templates')}>
+              用模板起草简历
+            </Button>
+          </div>
           <div className="hero-meta">
             <span className={`ai-dot ${aiConfigured ? 'on' : 'off'}`} />
             {aiConfigured ? '智谱模型在线，AI 结果均标注来源' : '模型未配置，当前仅能使用本地降级能力'}

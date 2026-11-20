@@ -260,7 +260,7 @@ export function Optimize() {
           counter={<span>{resumeText.replace(/\s/g, '').length} 字</span>}
           hint="默认带入所选简历，也可以临时粘贴另一版；此处修改不会覆盖原简历，除非你另存新版本。"
         >
-          <textarea className="textarea mono" rows={8} value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
+          <textarea className="textarea mono" rows={10} value={resumeText} onChange={(e) => setResumeText(e.target.value)} />
         </Field>
         {!current && <Callout tone="warn">还没有简历。先去「模板库」生成一份，或到「我的简历」粘贴文本。</Callout>}
       </Card>
@@ -278,7 +278,7 @@ export function Optimize() {
 
       {tab === 'advice' && (
         <div className="stack">
-          <div className="row between wrap gap-8">
+          <div className="advice-toolbar">
             <div className="muted small">按板块给出修改建议，每条都说明为什么改；建议不会编造你原文没有的数据。</div>
             <Button variant="ink" onClick={() => void runSuggestions()} loading={sugLoading}>
               生成修改建议

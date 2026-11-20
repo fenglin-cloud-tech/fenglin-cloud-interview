@@ -289,6 +289,30 @@ export function ImportResume() {
           电子简历的 PDF 原文只在浏览器里解析，不会上传；扫描件会转成图片交给智谱视觉模型（glm-4v-flash）识别。
           扫描件最多解析前 3 页，图片仅在内存中处理，不落盘、不长期存储。
         </Callout>
+
+        <div className="import-steps">
+          <div className="import-step">
+            <b>01</b>
+            <div>
+              <strong>选择文件</strong>
+              <span>电子版 PDF 在浏览器内读取文字层；扫描件和照片才转成图片发给视觉模型。</span>
+            </div>
+          </div>
+          <div className="import-step">
+            <b>02</b>
+            <div>
+              <strong>核对结果</strong>
+              <span>左边看原文预览，右边逐项修改；解析失败也可以手动整理，不会白屏。</span>
+            </div>
+          </div>
+          <div className="import-step">
+            <b>03</b>
+            <div>
+              <strong>确认入库</strong>
+              <span>点「确认并保存」才写入简历库，并自动带入简历优化。</span>
+            </div>
+          </div>
+        </div>
       </Card>
     </>
   );

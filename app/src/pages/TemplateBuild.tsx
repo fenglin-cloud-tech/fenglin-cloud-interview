@@ -234,7 +234,7 @@ export function TemplateBuild() {
           </Card>
 
           <Card title="整段导入" subtitle="如果你已经有 Markdown / 纯文本简历，可以按「## 板块名」自动拆进各栏">
-            <div className="row gap-8">
+            <div className="row gap-8 wrap">
               <input
                 ref={fileRef}
                 type="file"
