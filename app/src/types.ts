@@ -284,6 +284,13 @@ export interface GrowthStats {
   generatedAt: string;
 }
 
+export interface DemoStatus {
+  present: boolean;
+  total: number;
+  counts: { profile: number; job: number; resume: number; analysis: number; interview: number; review: number; bank: number };
+  loadedAt: string | null;
+}
+
 export interface DossierMatch {
   score: number;
   verdict: string;

@@ -9,6 +9,7 @@ import { coreRouter } from './routes/core.js';
 import { aiRouter } from './routes/ai.js';
 import { interviewRouter } from './routes/interview.js';
 import { reviewRouter } from './routes/review.js';
+import { demoRouter } from './routes/demo.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -18,6 +19,7 @@ app.use('/api', coreRouter);
 app.use('/api', aiRouter);
 app.use('/api', interviewRouter);
 app.use('/api', reviewRouter);
+app.use('/api', demoRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } });

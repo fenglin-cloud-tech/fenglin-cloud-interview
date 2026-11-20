@@ -131,6 +131,13 @@ CREATE TABLE IF NOT EXISTS review_task (
   PRIMARY KEY (kind, ref_id)
 );
 
+CREATE TABLE IF NOT EXISTS demo_seed (
+  kind       TEXT NOT NULL,
+  ref_id     INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (kind, ref_id)
+);
+
 CREATE TABLE IF NOT EXISTS setting (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL

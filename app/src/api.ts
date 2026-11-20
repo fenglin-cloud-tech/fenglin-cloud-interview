@@ -15,6 +15,7 @@ import type {
   ReportResult,
   GrowthStats,
   Dossier,
+  DemoStatus,
   ReviewPlan,
   ReviewKind,
   ReviewResult,
@@ -101,6 +102,9 @@ export const api = {
 
   growth: () => request<GrowthStats>('/stats/growth'),
   dossier: () => request<Dossier>('/dossier'),
+  demoStatus: () => request<DemoStatus>('/demo'),
+  loadDemo: () => post<DemoStatus & { loaded: boolean }>('/demo/load', {}),
+  clearDemo: () => post<DemoStatus & { removed: number }>('/demo/clear', {}),
 
   templates: () => request<{ templates: ResumeTemplate[] }>('/templates'),
 

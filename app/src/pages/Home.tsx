@@ -4,9 +4,9 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import { ROUND_LABEL, formatDateTime } from '../lib/format';
 import { openPrintView } from '../lib/download';
-import { Button, Card, Chip, EmptyState, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
+import { Button, Card, Chip, EmptyState, ErrorState, Loading, Modal, PageHeader, Stat } from '../components/ui';
 import { GrowthPanel } from '../components/GrowthPanel';
-import type { GrowthStats } from '../types';
+import type { DemoStatus, GrowthStats } from '../types';
 
 interface Dash {
   counts: {
@@ -34,12 +34,15 @@ interface Dash {
 }
 
 export function Home() {
-  const { activeResume, activeJob, aiConfigured } = useApp();
+  const { activeResume, activeJob, aiConfigured, refresh, toast } = useApp();
   const navigate = useNavigate();
   const [data, setData] = useState<Dash | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [growth, setGrowth] = useState<GrowthStats | null>(null);
+  const [demo, setDemo] = useState<DemoStatus | null>(null);
+  const [demoBusy, setDemoBusy] = useState<'load' | 'clear' | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -51,15 +54,62 @@ export function Home() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
-
-  // 成长数据独立加载：即使失败也不影响训练台其它区域
-  useEffect(() => {
+  const loadGrowth = () => {
     api
       .growth()
       .then(setGrowth)
       .catch(() => setGrowth(null));
-  }, []);
+  };
+
+  const loadDemo = () => {
+    api
+      .demoStatus()
+      .then(setDemo)
+      .catch(() => setDemo(null));
+  };
+
+  useEffect(load, []);
+
+  // 成长数据独立加载：即使失败也不影响训练台其它区域
+  useEffect(loadGrowth, []);
+
+  useEffect(loadDemo, []);
+
+  const afterDemoChange = async () => {
+    await refresh();
+    load();
+    loadGrowth();
+    loadDemo();
+  };
+
+  const runLoadDemo = async () => {
+    setDemoBusy('load');
+    try {
+      const res = await api.loadDemo();
+      setDemo(res);
+      await afterDemoChange();
+      toast('示例档案已载入，可用于体验成长曲线与求职档案', 'ok');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '示例数据载入失败', 'err');
+    } finally {
+      setDemoBusy(null);
+    }
+  };
+
+  const runClearDemo = async () => {
+    setDemoBusy('clear');
+    try {
+      const res = await api.clearDemo();
+      setDemo(res);
+      setConfirmClear(false);
+      await afterDemoChange();
+      toast('示例数据已清空，你自己的记录未受影响', 'ok');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '清空示例数据失败', 'err');
+    } finally {
+      setDemoBusy(null);
+    }
+  };
 
   const counts = data?.counts;
   const checklist = [
@@ -78,6 +128,31 @@ export function Home() {
         title="把不确定的面试，练成可复现的流程"
         desc="从一份简历出发：诊断差距 → 针对追问 → 模拟面试 → 复盘沉淀 → 再从题库反练。每一步的结果都会喂给下一步。"
       />
+
+      <section className="demo-bar">
+        <div className="demo-info">
+          <span className="demo-eyebrow">DEMO · 演示数据</span>
+          <strong>
+            {demo?.present
+              ? `已载入示例档案：${demo.counts.interview} 场面试 · ${demo.counts.bank} 道题 · ${demo.counts.review} 条复盘`
+              : '空库想先看效果？可以一键载入一份示例档案'}
+          </strong>
+          <p>
+            示例数据统一使用「示例-」前缀，仅用于演示；清空只会删除示例数据，不会动你自己创建的记录。
+            {demo?.present && demo.loadedAt ? ` 载入时间 ${formatDateTime(demo.loadedAt)}。` : ''}
+          </p>
+        </div>
+        <div className="row gap-8 wrap">
+          <Button variant={demo?.present ? 'ghost' : 'ink'} onClick={() => void runLoadDemo()} loading={demoBusy === 'load'}>
+            {demo?.present ? '重新载入示例' : '载入示例档案'}
+          </Button>
+          {demo?.present && (
+            <Button variant="quiet" onClick={() => setConfirmClear(true)} loading={demoBusy === 'clear'}>
+              清空示例数据
+            </Button>
+          )}
+        </div>
+      </section>
 
       <section className="hero">
         <div className="hero-main">
@@ -238,6 +313,27 @@ export function Home() {
           </div>
         </>
       )}
+
+      <Modal
+        open={confirmClear}
+        title="清空示例数据？"
+        onClose={() => setConfirmClear(false)}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setConfirmClear(false)}>
+              取消
+            </Button>
+            <Button variant="ink" onClick={() => void runClearDemo()} loading={demoBusy === 'clear'}>
+              只清空示例数据
+            </Button>
+          </>
+        }
+      >
+        <p className="demo-confirm">
+          将删除所有以「示例-」开头、由载入功能写入的演示记录（档案信息、岗位、简历、JD 匹配、面试与逐题反馈、复盘、题库示例题）。
+          <strong>你自己创建的简历、岗位、面试和复盘不会被删除。</strong>
+        </p>
+      </Modal>
     </div>
   );
 }
