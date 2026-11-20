@@ -15,6 +15,7 @@ import { Bank } from './pages/Bank';
 import { ProfilePage } from './pages/ProfilePage';
 import { Privacy } from './pages/Privacy';
 import { Backup } from './pages/Backup';
+import { Applications } from './pages/Applications';
 import { ImportResume } from './pages/ImportResume';
 import { PrintResume } from './pages/PrintResume';
 import { PrintReviews } from './pages/PrintReviews';
@@ -45,6 +46,7 @@ export function App() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="privacy" element={<Privacy />} />
             <Route path="backup" element={<Backup />} />
+            <Route path="applications" element={<Applications />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

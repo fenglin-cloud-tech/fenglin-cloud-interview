@@ -13,6 +13,8 @@ const COUNT_LABEL: Record<string, string> = {
   reviews: '复盘记录',
   bankItems: '个人题库',
   reviewTasks: '复习排程',
+  applications: '投递记录',
+  applicationLinks: '投递关联',
 };
 
 const MAX_IMPORT_BYTES = 8 * 1024 * 1024;

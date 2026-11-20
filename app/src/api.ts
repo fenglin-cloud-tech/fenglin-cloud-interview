@@ -1,4 +1,6 @@
 import type {
+  ApplicationRecord,
+  ApplicationStage,
   BankItem,
   InterviewListItem,
   JdAnalysisRecord,
@@ -156,6 +158,40 @@ export const api = {
   updateJob: (id: number, body: { title?: string; company?: string; jd?: string }) =>
     put<{ job: Job }>(`/jobs/${id}`, body),
   deleteJob: (id: number) => del<{ ok: boolean }>(`/jobs/${id}`),
+  applications: () => request<{ applications: ApplicationRecord[] }>('/applications'),
+  applicationDetail: (id: number) =>
+    request<{
+      application: ApplicationRecord;
+      options: {
+        interviews: {
+          id: number;
+          started_at: string;
+          ended_at: string | null;
+          overall_score: number | null;
+          mode: string;
+          status: string;
+          linkedApplicationId: number | null;
+        }[];
+        reviews: { id: number; question: string; rating: number; created_at: string; linkedApplicationId: number | null }[];
+      };
+    }>(`/applications/${id}`),
+  createApplication: (body: {
+    company: string;
+    title: string;
+    jobId?: number | null;
+    appliedOn: string;
+    stage: ApplicationStage;
+    note?: string;
+  }) => post<{ application: ApplicationRecord }>('/applications', body),
+  updateApplication: (
+    id: number,
+    body: { company: string; title: string; jobId?: number | null; appliedOn: string; stage: ApplicationStage; note?: string },
+  ) => put<{ application: ApplicationRecord }>(`/applications/${id}`, body),
+  deleteApplication: (id: number) => del<{ ok: boolean }>(`/applications/${id}`),
+  linkApplication: (id: number, kind: 'interview' | 'review', refId: number) =>
+    post<{ application: ApplicationRecord }>(`/applications/${id}/links`, { kind, refId }),
+  unlinkApplication: (id: number, kind: 'interview' | 'review', refId: number) =>
+    del<{ application: ApplicationRecord }>(`/applications/${id}/links/${kind}/${refId}`),
   fetchJd: (url: string) =>
     post<
       | { ok: true; jd: string; title: string; finalUrl: string; httpStatus: number; chars: number; truncated: boolean }

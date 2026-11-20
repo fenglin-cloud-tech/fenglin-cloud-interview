@@ -11,6 +11,7 @@ const ICONS: Record<string, ReactNode> = {
   template: <path d="M4 3h9l3 3v11H4zM13 3v3h3M6.5 9h7M6.5 12h7M6.5 15h4" />,
   doc: <path d="M5 3h7l3 3v11H5zM12 3v3h3M7.5 10h5M7.5 13h5M7.5 16h3" />,
   target: <path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM10 6.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM10 9.2a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z" />,
+  send: <path d="M3 10 17 4l-3.2 13-4-5.2L3 10zM9.8 11.8 17 4" />,
   wand: <path d="m4 16 9-9M11.5 4.5l1.5-1.5M14 8l2-1M9 3.5 8 5M16 11l-1 2M4 16l-1 1" />,
   mic: <path d="M10 3a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 10 3zM5 9.5a5 5 0 0 0 10 0M10 14.5V17M7.5 17h5" />,
   notebook: <path d="M5 3h10v14H5zM8 3v14M10.5 7h2.5M10.5 10.5h2.5" />,
@@ -40,6 +41,7 @@ const NAV = [
     items: [
       { to: '/resumes', label: '我的简历', icon: 'doc' },
       { to: '/jobs', label: '目标岗位', icon: 'target' },
+      { to: '/applications', label: '投递追踪', icon: 'send' },
       { to: '/optimize', label: '简历优化', icon: 'wand' },
     ],
   },
@@ -220,6 +222,7 @@ function pathLabel(path: string): string {
     ['/reviews', '复盘记录'],
     ['/bank', '个人题库'],
     ['/profile', '本地档案'],
+    ['/applications', '投递追踪'],
     ['/backup', '数据备份'],
     ['/privacy', '隐私说明'],
     ['/', '训练台'],

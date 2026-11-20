@@ -131,6 +131,27 @@ CREATE TABLE IF NOT EXISTS review_task (
   PRIMARY KEY (kind, ref_id)
 );
 
+CREATE TABLE IF NOT EXISTS application (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  company    TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  job_id     INTEGER REFERENCES job(id) ON DELETE SET NULL,
+  applied_on TEXT NOT NULL,
+  stage      TEXT NOT NULL DEFAULT 'applied',
+  note       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- 投递与面试/复盘的关联：单独关联表，避免给 interview / review 增加列和迁移。
+CREATE TABLE IF NOT EXISTS application_link (
+  application_id INTEGER NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+  kind           TEXT NOT NULL,
+  ref_id         INTEGER NOT NULL,
+  created_at     TEXT NOT NULL,
+  PRIMARY KEY (kind, ref_id)
+);
+
 CREATE TABLE IF NOT EXISTS demo_seed (
   kind       TEXT NOT NULL,
   ref_id     INTEGER NOT NULL,
@@ -147,6 +168,8 @@ CREATE INDEX IF NOT EXISTS idx_task_due ON review_task(due_at);
 CREATE INDEX IF NOT EXISTS idx_turn_interview ON interview_turn(interview_id, seq);
 CREATE INDEX IF NOT EXISTS idx_bank_category ON bank_item(category, weak);
 CREATE INDEX IF NOT EXISTS idx_review_created ON review(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_application_stage ON application(stage, applied_on DESC);
+CREATE INDEX IF NOT EXISTS idx_applink_app ON application_link(application_id);
 `;
 
 type SqlValue = number | string | Uint8Array | null;

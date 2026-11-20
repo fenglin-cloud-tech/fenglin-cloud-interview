@@ -14,7 +14,7 @@ import { HttpError } from '../util.js';
  */
 export const demoRouter = Router();
 
-type Kind = 'profile' | 'job' | 'resume' | 'analysis' | 'interview' | 'review' | 'bank';
+type Kind = 'profile' | 'job' | 'resume' | 'analysis' | 'interview' | 'review' | 'bank' | 'application';
 
 const KIND_LABEL: Record<Kind, string> = {
   profile: '档案',
@@ -24,6 +24,7 @@ const KIND_LABEL: Record<Kind, string> = {
   interview: '面试',
   review: '复盘',
   bank: '题库',
+  application: '投递',
 };
 
 function idsOf(kind: Kind): number[] {
@@ -49,7 +50,9 @@ export function clearDemo(): number {
   const interviews = idsOf('interview');
   const reviews = idsOf('review');
   const banks = idsOf('bank');
+  const applications = idsOf('application');
 
+  delByIds('application', 'id', applications);
   delByIds('interview_turn', 'interview_id', interviews);
   delByIds('interview', 'id', interviews);
   if (reviews.length) {
@@ -88,7 +91,16 @@ export function clearDemo(): number {
   const activeJob = Number(getSetting('active_job_id') || 0);
   if (activeJob && jobs.includes(activeJob)) setSetting('active_job_id', '');
 
-  return profiles.length + jobs.length + resumes.length + analyses.length + interviews.length + reviews.length + banks.length;
+  return (
+    profiles.length +
+    jobs.length +
+    resumes.length +
+    analyses.length +
+    interviews.length +
+    reviews.length +
+    banks.length +
+    applications.length
+  );
 }
 
 export function demoStatus() {
@@ -446,6 +458,7 @@ demoRouter.post('/demo/load', (_req, res) => {
     const analysisId = analysis.lastInsertRowid;
     mark('analysis', analysisId, stamp);
 
+    const interviewIds: number[] = [];
     INTERVIEWS.forEach((iv) => {
       const startedAt = iso(iv.daysAgo + 0.02);
       const endedAt = iso(iv.daysAgo);
@@ -463,6 +476,7 @@ demoRouter.post('/demo/load', (_req, res) => {
         )
         .run(resumeId, jobId, iv.turns[iv.turns.length - 1].round, iv.turns.length, startedAt, endedAt, JSON.stringify(report), iv.overall);
       const interviewId = row.lastInsertRowid;
+      interviewIds.push(interviewId);
       mark('interview', interviewId, stamp);
 
       iv.turns.forEach((t, i) => {
@@ -492,13 +506,59 @@ demoRouter.post('/demo/load', (_req, res) => {
       });
     });
 
+    const reviewIds: number[] = [];
     REVIEWS.forEach((r) => {
       const row = db
         .prepare(
           'INSERT INTO review (interview_id, bank_id, job_id, question, my_answer, performance, improvement, rating, tags, created_at) VALUES (NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(jobId, r.question, r.answer, r.performance, r.improvement, r.rating, '示例-复盘,缓存,表达', iso(r.daysAgo));
+      reviewIds.push(row.lastInsertRowid);
       mark('review', row.lastInsertRowid, stamp);
+    });
+
+    // 投递追踪示例：覆盖不同阶段，并把面试 / 复盘挂到具体投递上。
+    const APPLICATIONS = [
+      {
+        company: '示例-云海网络',
+        title: '后端开发工程师（Java）',
+        jobId,
+        appliedOn: new Date(now.getTime() - 21 * 86400000).toISOString().slice(0, 10),
+        stage: 'interview2',
+        note: '示例-一面反馈基础不错，二面重点准备缓存与项目数据来源。',
+        links: interviewIds.slice(0, 2).map((id) => ({ kind: 'interview' as const, id })),
+      },
+      {
+        company: '示例-星河数据',
+        title: '数据开发实习生',
+        jobId: null,
+        appliedOn: new Date(now.getTime() - 9 * 86400000).toISOString().slice(0, 10),
+        stage: 'written',
+        note: '示例-已完成笔试，等待结果；岗位偏 SQL 与数据链路。',
+        links: reviewIds.slice(0, 1).map((id) => ({ kind: 'review' as const, id })),
+      },
+      {
+        company: '示例-远山科技',
+        title: 'Java 后端开发',
+        jobId: null,
+        appliedOn: new Date(now.getTime() - 30 * 86400000).toISOString().slice(0, 10),
+        stage: 'rejected',
+        note: '示例-简历未通过初筛，补一段消息队列实践后再投。',
+        links: [],
+      },
+    ];
+    APPLICATIONS.forEach((a) => {
+      const row = db
+        .prepare(
+          'INSERT INTO application (company, title, job_id, applied_on, stage, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(a.company, a.title, a.jobId, a.appliedOn, a.stage, a.note, iso(8), stamp);
+      mark('application', row.lastInsertRowid, stamp);
+      a.links.forEach((l) => {
+        db.prepare(
+          'INSERT OR IGNORE INTO application_link (application_id, kind, ref_id, created_at) VALUES (?, ?, ?, ?)',
+        ).run(row.lastInsertRowid, l.kind, l.id, stamp);
+      });
     });
 
     BANK.forEach((b) => {

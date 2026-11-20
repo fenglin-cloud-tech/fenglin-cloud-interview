@@ -178,6 +178,40 @@ export interface ReviewItem {
   created_at: string;
 }
 
+export type ApplicationStage =
+  | 'applied'
+  | 'written'
+  | 'interview1'
+  | 'interview2'
+  | 'hr'
+  | 'offer'
+  | 'rejected'
+  | 'withdrawn';
+
+export interface ApplicationRecord {
+  id: number;
+  company: string;
+  title: string;
+  jobId: number | null;
+  jobTitle: string | null;
+  appliedOn: string;
+  stage: ApplicationStage;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+  links: {
+    interviews: {
+      id: number;
+      started_at: string;
+      ended_at: string | null;
+      overall_score: number | null;
+      mode: string;
+      status: string;
+    }[];
+    reviews: { id: number; question: string; rating: number; created_at: string }[];
+  };
+}
+
 export interface BankItem {
   id: number;
   question: string;

@@ -11,6 +11,7 @@ import { interviewRouter } from './routes/interview.js';
 import { reviewRouter } from './routes/review.js';
 import { demoRouter } from './routes/demo.js';
 import { BACKUP_ROUTER } from './routes/backup.js';
+import { applicationsRouter } from './routes/applications.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -22,6 +23,7 @@ app.use('/api', interviewRouter);
 app.use('/api', reviewRouter);
 app.use('/api', demoRouter);
 app.use('/api', BACKUP_ROUTER);
+app.use('/api', applicationsRouter);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } });

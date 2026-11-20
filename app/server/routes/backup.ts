@@ -27,6 +27,8 @@ const LIMITS = {
   reviews: 5000,
   bankItems: 5000,
   reviewTasks: 20000,
+  applications: 3000,
+  applicationLinks: 10000,
 };
 
 type Obj = Record<string, unknown>;
@@ -45,6 +47,8 @@ interface BackupFile {
     reviews: Obj[];
     bankItems: Obj[];
     reviewTasks: Obj[];
+    applications: Obj[];
+    applicationLinks: Obj[];
   };
 }
 
@@ -212,6 +216,34 @@ function parseRows(file: BackupFile) {
   for (const t of reviewTasks) {
     if (t.kind !== 'review' && t.kind !== 'bank') throw bad(`reviewTasks 存在未知类型「${t.kind}」`);
   }
+  const APP_STAGES = ['applied', 'written', 'interview1', 'interview2', 'hr', 'offer', 'rejected', 'withdrawn'];
+  const applications = arr(d, 'applications').map((r, i) => {
+    const stage = str(r.stage, 20, `applications[${i}].stage`) || 'applied';
+    if (!APP_STAGES.includes(stage)) throw bad(`applications[${i}].stage 不是已知阶段`);
+    const appliedOn = str(r.applied_on, 10, `applications[${i}].applied_on`, true);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(appliedOn)) throw bad(`applications[${i}].applied_on 日期格式不正确`);
+    return {
+      id: int(r.id, `applications[${i}].id`, { min: 1 })!,
+      company: str(r.company, 120, `applications[${i}].company`, true),
+      title: str(r.title, 160, `applications[${i}].title`, true),
+      job_id: int(r.job_id, `applications[${i}].job_id`, { min: 1, nullable: true }),
+      applied_on: appliedOn,
+      stage,
+      note: str(r.note, 5000, `applications[${i}].note`),
+      created_at: isoish(r.created_at, `applications[${i}].created_at`, true),
+      updated_at: isoish(r.updated_at, `applications[${i}].updated_at`, true),
+    };
+  });
+  const applicationLinks = arr(d, 'applicationLinks').map((r, i) => {
+    const kind = str(r.kind, 20, `applicationLinks[${i}].kind`, true);
+    if (kind !== 'interview' && kind !== 'review') throw bad(`applicationLinks[${i}].kind 不合法`);
+    return {
+      application_id: int(r.application_id, `applicationLinks[${i}].application_id`, { min: 1 })!,
+      kind,
+      ref_id: int(r.ref_id, `applicationLinks[${i}].ref_id`, { min: 1 })!,
+      created_at: isoish(r.created_at, `applicationLinks[${i}].created_at`, true),
+    };
+  });
 
   checkDupIds(jobs, 'jobs');
   checkDupIds(resumes, 'resumes');
@@ -220,6 +252,7 @@ function parseRows(file: BackupFile) {
   checkDupIds(turns, 'turns');
   checkDupIds(reviews, 'reviews');
   checkDupIds(bankItems, 'bankItems');
+  checkDupIds(applications, 'applications');
 
   const warnings: string[] = [];
   const jobIds = new Set(jobs.map((j) => j.id));
@@ -257,7 +290,35 @@ function parseRows(file: BackupFile) {
   const validTasks = reviewTasks.filter((t) => (t.kind === 'bank' ? bankIds.has(t.ref_id) : reviewIds.has(t.ref_id)));
   if (validTasks.length < reviewTasks.length) warnings.push('有复习任务引用了备份中不存在的题目/复盘，已跳过');
 
-  return { jobs, resumes, jdAnalyses, interviews, turns, reviews, bankItems, reviewTasks: validTasks, warnings };
+  const appIds = new Set(applications.map((a) => a.id));
+  for (const a of applications) {
+    if (a.job_id && !jobIds.has(a.job_id)) a.job_id = null;
+  }
+  const seenLinks = new Set<string>();
+  const validLinks = applicationLinks.filter((l) => {
+    if (!appIds.has(l.application_id)) return false;
+    if (l.kind === 'interview' && !interviewIds.has(l.ref_id)) return false;
+    if (l.kind === 'review' && !reviewIds.has(l.ref_id)) return false;
+    const key = `${l.kind}:${l.ref_id}`;
+    if (seenLinks.has(key)) return false;
+    seenLinks.add(key);
+    return true;
+  });
+  if (validLinks.length < applicationLinks.length) warnings.push('有投递关联指向不存在的记录或重复，已跳过');
+
+  return {
+    jobs,
+    resumes,
+    jdAnalyses,
+    interviews,
+    turns,
+    reviews,
+    bankItems,
+    reviewTasks: validTasks,
+    applications,
+    applicationLinks: validLinks,
+    warnings,
+  };
 }
 
 function validate(raw: unknown): Validated {
@@ -295,6 +356,8 @@ function validate(raw: unknown): Validated {
       reviews: parsed.reviews,
       bankItems: parsed.bankItems,
       reviewTasks: parsed.reviewTasks,
+      applications: parsed.applications,
+      applicationLinks: parsed.applicationLinks,
     } },
     warnings: parsed.warnings,
   };
@@ -311,6 +374,8 @@ function countsOf(parsed: ReturnType<typeof parseRows>) {
     reviews: parsed.reviews.length,
     bankItems: parsed.bankItems.length,
     reviewTasks: parsed.reviewTasks.length,
+    applications: parsed.applications.length,
+    applicationLinks: parsed.applicationLinks.length,
   };
 }
 
@@ -327,6 +392,8 @@ function currentCounts() {
     reviews: one('review'),
     bankItems: one('bank_item'),
     reviewTasks: one('review_task'),
+    applications: one('application'),
+    applicationLinks: one('application_link'),
   };
 }
 
@@ -340,6 +407,7 @@ function isEmptyTarget(): boolean {
     c.reviews === 0 &&
     c.bankItems === 0 &&
     c.reviewTasks === 0 &&
+    c.applications === 0 &&
     !db.prepare('SELECT nickname FROM profile WHERE id = 1').get()?.nickname
   );
 }
@@ -353,6 +421,8 @@ function clearAll(): void {
   db.prepare('DELETE FROM demo_seed').run();
   db.prepare("DELETE FROM setting WHERE key IN ('demo_prev_profile', 'active_resume_id', 'active_job_id')").run();
   for (const t of [
+    'application_link',
+    'application',
     'review_task',
     'interview_turn',
     'review',
@@ -461,6 +531,16 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
       rv.created_at,
     );
   }
+  for (const a of parsed.applications) {
+    db.prepare(
+      'INSERT INTO application (id, company, title, job_id, applied_on, stage, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(a.id, a.company, a.title, a.job_id, a.applied_on, a.stage, a.note, a.created_at, a.updated_at);
+  }
+  for (const l of parsed.applicationLinks) {
+    db.prepare(
+      'INSERT OR IGNORE INTO application_link (application_id, kind, ref_id, created_at) VALUES (?, ?, ?, ?)',
+    ).run(l.application_id, l.kind, l.ref_id, l.created_at);
+  }
   for (const t of parsed.reviewTasks) {
     db.prepare(
       'INSERT OR IGNORE INTO review_task (kind, ref_id, stage, due_at, last_reviewed_at, reps, lapses, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -483,6 +563,7 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
   const interviewMap = new Map<number, number>();
   const bankMap = new Map<number, number>();
   const reviewMap = new Map<number, number>();
+  const appMap = new Map<number, number>();
 
   for (const j of parsed.jobs) {
     const r = db
@@ -508,6 +589,23 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
       a.source,
       a.created_at,
     );
+  }
+  for (const a of parsed.applications) {
+    const r = db
+      .prepare(
+        'INSERT INTO application (company, title, job_id, applied_on, stage, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        a.company,
+        a.title,
+        a.job_id ? jobMap.get(a.job_id) ?? null : null,
+        a.applied_on,
+        a.stage,
+        a.note,
+        a.created_at,
+        a.updated_at,
+      );
+    appMap.set(a.id, r.lastInsertRowid);
   }
   for (const iv of parsed.interviews) {
     const r = db
@@ -610,6 +708,14 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
       );
     reviewMap.set(rv.id, r.lastInsertRowid);
   }
+  for (const l of parsed.applicationLinks) {
+    const appId = appMap.get(l.application_id);
+    const refId = l.kind === 'interview' ? interviewMap.get(l.ref_id) : reviewMap.get(l.ref_id);
+    if (!appId || !refId) continue;
+    db.prepare(
+      'INSERT OR IGNORE INTO application_link (application_id, kind, ref_id, created_at) VALUES (?, ?, ?, ?)',
+    ).run(appId, l.kind, refId, l.created_at);
+  }
   for (const t of parsed.reviewTasks) {
     const mapped =
       t.kind === 'bank' ? bankMap.get(t.ref_id) : reviewMap.get(t.ref_id);
@@ -665,6 +771,8 @@ BACKUP_ROUTER.get(
         reviews: db.prepare('SELECT * FROM review ORDER BY id').all() as Obj[],
         bankItems: db.prepare('SELECT * FROM bank_item ORDER BY id').all() as Obj[],
         reviewTasks: db.prepare('SELECT * FROM review_task ORDER BY kind, ref_id').all() as Obj[],
+        applications: db.prepare('SELECT * FROM application ORDER BY id').all() as Obj[],
+        applicationLinks: db.prepare('SELECT * FROM application_link ORDER BY application_id, kind, ref_id').all() as Obj[],
       },
     };
     const filename = `fenglin-backup-${new Date().toISOString().slice(0, 10)}.json`;
