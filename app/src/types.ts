@@ -283,3 +283,67 @@ export interface GrowthStats {
   groups: GrowthGroup[];
   generatedAt: string;
 }
+
+export interface DossierMatch {
+  score: number;
+  verdict: string;
+  covered: { requirement: string; status: CoverageStatus; evidence: string }[];
+  missingKeywords: string[];
+  actions: string[];
+  created_at: string;
+}
+
+export interface DossierInterview {
+  id: number;
+  startedAt: string;
+  jobTitle: string;
+  overallScore: number;
+  dims: GrowthDims | null;
+}
+
+export interface DossierLatestReport {
+  id: number;
+  startedAt: string;
+  overallScore: number;
+  roundScores: { round: string; score: number; comment: string }[];
+  weaknesses: string[];
+  reviewPoints: string[];
+  summary: string;
+}
+
+export interface DossierReview {
+  id: number;
+  question: string;
+  improvement: string;
+  rating: number;
+  tags: string;
+  created_at: string;
+}
+
+export interface DossierWeakItem {
+  id: number;
+  question: string;
+  category: string;
+  last_score: number | null;
+  ask_count: number;
+  next_review_at: string | null;
+}
+
+export interface Dossier {
+  generatedAt: string;
+  profile: Profile;
+  resume: { id: number; title: string; content: string; job_id: number | null; updated_at: string } | null;
+  job: { id: number; title: string; company: string; jd: string } | null;
+  match: DossierMatch | null;
+  scope: { jobScoped: boolean; label: string };
+  interviews: DossierInterview[];
+  latest: DossierLatestReport | null;
+  growth: {
+    totalFinished: number;
+    count: number;
+    points: { id: number; startedAt: string; score: number }[];
+    radar: { early: GrowthRadarSide | null; recent: GrowthRadarSide | null };
+  };
+  reviews: { total: number; items: DossierReview[] };
+  bank: { total: number; weak: number; items: DossierWeakItem[] };
+}

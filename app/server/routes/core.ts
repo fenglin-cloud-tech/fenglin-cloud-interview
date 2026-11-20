@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, getSetting, nowIso, parseJson, setSetting } from '../db.js';
 import { TEMPLATES } from '../templates.js';
 import { buildDocx } from '../docx-export.js';
+import { ensureReviewTasks } from '../review-schedule.js';
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { env, hasApiKey } from '../env.js';
 
@@ -275,6 +276,10 @@ function radarOf(points: GrowthPoint[]) {
 }
 
 coreRouter.get('/stats/growth', (_req, res) => {
+  res.json(buildGrowth());
+});
+
+function buildGrowth() {
   const rows = db
     .prepare(
       `SELECT i.id, i.job_id, i.started_at, i.overall_score, j.title AS job_title
@@ -342,5 +347,116 @@ coreRouter.get('/stats/growth', (_req, res) => {
   }));
   groups.sort((a, b) => (a.key === 'all' ? -1 : b.key === 'all' ? 1 : b.count - a.count));
 
-  res.json({ totalFinished: points.length, groups, generatedAt: nowIso() });
+  return { totalFinished: points.length, groups, generatedAt: nowIso() };
+}
+
+/* ---------------- 求职档案：聚合既有真实数据，不补造 ---------------- */
+
+coreRouter.get('/dossier', (_req, res) => {
+  ensureReviewTasks();
+  const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get() as Record<string, unknown>;
+  const activeResumeId = Number(getSetting('active_resume_id') || 0) || null;
+  const activeJobId = Number(getSetting('active_job_id') || 0) || null;
+
+  const resume = (activeResumeId
+    ? db.prepare('SELECT id, title, content, job_id, updated_at FROM resume WHERE id = ?').get(activeResumeId)
+    : db.prepare('SELECT id, title, content, job_id, updated_at FROM resume ORDER BY updated_at DESC LIMIT 1').get()) as
+    | { id: number; title: string; content: string; job_id: number | null; updated_at: string }
+    | undefined;
+
+  const job = (activeJobId
+    ? db.prepare('SELECT id, title, company, jd FROM job WHERE id = ?').get(activeJobId)
+    : resume?.job_id
+      ? db.prepare('SELECT id, title, company, jd FROM job WHERE id = ?').get(resume.job_id)
+      : db.prepare('SELECT id, title, company, jd FROM job ORDER BY updated_at DESC LIMIT 1').get()) as
+    | { id: number; title: string; company: string; jd: string }
+    | undefined;
+
+  const matchRow = (resume
+    ? db.prepare('SELECT * FROM jd_analysis WHERE resume_id = ? ORDER BY id DESC LIMIT 1').get(resume.id)
+    : db.prepare('SELECT * FROM jd_analysis ORDER BY id DESC LIMIT 1').get()) as
+    | { result_json: string; created_at: string }
+    | undefined;
+  const match = matchRow
+    ? { ...parseJson<Record<string, unknown>>(matchRow.result_json, {}), created_at: matchRow.created_at }
+    : null;
+
+  const growth = buildGrowth();
+  const group =
+    (job ? growth.groups.find((g) => g.jobId === job.id && g.count > 0) : null) ||
+    growth.groups.find((g) => g.key === 'all') ||
+    growth.groups[0] ||
+    null;
+
+  const recentPoints = group ? group.points.slice(-5).reverse() : [];
+  const interviews = recentPoints.map((p) => ({
+    id: p.id,
+    startedAt: p.startedAt,
+    jobTitle: p.jobTitle,
+    overallScore: p.score,
+    dims: p.dims,
+  }));
+
+  const scopeJobId: number | null = group?.jobId ?? null;
+  const latestRow = db
+    .prepare(
+      `SELECT id, started_at, report_json FROM interview
+       WHERE status = 'finished' AND report_json IS NOT NULL ${scopeJobId ? 'AND job_id = ?' : ''}
+       ORDER BY started_at DESC, id DESC LIMIT 1`,
+    )
+    .get(...(scopeJobId ? [scopeJobId] : [])) as
+    | { id: number; started_at: string; report_json: string }
+    | undefined;
+  const report = latestRow ? parseJson<Record<string, unknown> | null>(latestRow.report_json, null) : null;
+  const latest = report
+    ? {
+        id: latestRow!.id,
+        startedAt: latestRow!.started_at,
+        overallScore: Number(report.overallScore ?? 0),
+        roundScores: (report.roundScores as { round: string; score: number; comment: string }[]) || [],
+        weaknesses: (report.weaknesses as string[]) || [],
+        reviewPoints: (report.reviewPoints as string[]) || [],
+        summary: String(report.summary || ''),
+      }
+    : null;
+
+  const reviewTotal = (db.prepare('SELECT COUNT(*) AS n FROM review').get() as { n: number }).n;
+  const reviews = db
+    .prepare('SELECT id, question, improvement, rating, tags, created_at FROM review ORDER BY id DESC LIMIT 5')
+    .all();
+
+  const bankTotal = (db.prepare('SELECT COUNT(*) AS n FROM bank_item').get() as { n: number }).n;
+  const weakTotal = (db.prepare('SELECT COUNT(*) AS n FROM bank_item WHERE weak = 1').get() as { n: number }).n;
+  const weakItems = db
+    .prepare(
+      `SELECT b.id, b.question, b.category, b.last_score, b.ask_count, t.due_at AS next_review_at
+       FROM bank_item b
+       LEFT JOIN review_task t ON t.kind = 'bank' AND t.ref_id = b.id
+       WHERE b.weak = 1
+       ORDER BY (b.last_score IS NULL), b.last_score ASC, b.id DESC
+       LIMIT 8`,
+    )
+    .all();
+
+  res.json({
+    generatedAt: nowIso(),
+    profile,
+    resume: resume ?? null,
+    job: job ?? null,
+    match,
+    scope: {
+      jobScoped: !!group?.jobId,
+      label: group?.jobId ? group.label || job?.title || '目标岗位' : '全部岗位',
+    },
+    interviews,
+    latest,
+    growth: {
+      totalFinished: growth.totalFinished,
+      count: group?.count ?? 0,
+      points: group ? group.points.map((p) => ({ id: p.id, startedAt: p.startedAt, score: p.score })) : [],
+      radar: group?.radar ?? { early: null, recent: null },
+    },
+    reviews: { total: reviewTotal, items: reviews },
+    bank: { total: bankTotal, weak: weakTotal, items: weakItems },
+  });
 });

@@ -17,6 +17,7 @@ import { Privacy } from './pages/Privacy';
 import { ImportResume } from './pages/ImportResume';
 import { PrintResume } from './pages/PrintResume';
 import { PrintReviews } from './pages/PrintReviews';
+import { PrintProfile } from './pages/PrintProfile';
 import { NotFound } from './pages/NotFound';
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
         <Routes>
           <Route path="print/resume/:id" element={<PrintResume />} />
           <Route path="print/reviews" element={<PrintReviews />} />
+          <Route path="print/profile" element={<PrintProfile />} />
           <Route element={<Layout />}>
             <Route index element={<Home />} />
             <Route path="templates" element={<Templates />} />

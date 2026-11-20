@@ -14,6 +14,7 @@ import type {
   FeedbackResult,
   ReportResult,
   GrowthStats,
+  Dossier,
   ReviewPlan,
   ReviewKind,
   ReviewResult,
@@ -99,6 +100,7 @@ export const api = {
     }>('/dashboard'),
 
   growth: () => request<GrowthStats>('/stats/growth'),
+  dossier: () => request<Dossier>('/dossier'),
 
   templates: () => request<{ templates: ResumeTemplate[] }>('/templates'),
 

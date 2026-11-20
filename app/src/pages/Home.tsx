@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import { ROUND_LABEL, formatDateTime } from '../lib/format';
+import { openPrintView } from '../lib/download';
 import { Button, Card, Chip, EmptyState, ErrorState, Loading, PageHeader, Stat } from '../components/ui';
 import { GrowthPanel } from '../components/GrowthPanel';
 import type { GrowthStats } from '../types';
@@ -143,6 +144,22 @@ export function Home() {
             <Stat label="完成面试" value={counts?.finished ?? 0} hint={`共 ${counts?.interviews ?? 0} 场会话`} />
             <Stat label="题库沉淀" value={counts?.bank ?? 0} hint={`${counts?.weak ?? 0} 道标记为薄弱`} />
             <Stat label="复盘" value={counts?.reviews ?? 0} hint="可导出 Markdown / Word" />
+          </div>
+
+          <div className="dossier-cta">
+            <div className="dossier-cta-info">
+              <span className="dossier-cta-eyebrow">DOSSIER · 答辩材料</span>
+              <strong>一键合成求职档案</strong>
+              <p>
+                把简历要点、JD 匹配、面试成绩、复盘与薄弱项、成长趋势合成一份带 LOGO 的 A4 档案，打开后可直接打印或另存为 PDF。
+              </p>
+            </div>
+            <div className="row gap-8 wrap">
+              <Button variant="ink" onClick={() => openPrintView('/print/profile')}>
+                生成求职档案 PDF
+              </Button>
+              <Button onClick={() => window.open('/print/profile', '_blank', 'noopener')}>先预览</Button>
+            </div>
           </div>
 
           {growth && <GrowthPanel data={growth} activeJobId={data?.activeJobId ?? activeJob?.id ?? null} />}
