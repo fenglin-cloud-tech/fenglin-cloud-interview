@@ -1,0 +1,33 @@
+# 依赖
+node_modules/
+
+# 构建产物
+app/dist/
+app/dist-server/
+
+# 本地 SQLite 数据（含用户简历、面试记录）
+app/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# 环境变量与密钥（保留示例文件）
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.*
+!**/.env.example
+
+# 日志
+*.log
+logs/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 过程性中间产物：日志、临时脚本、全量截图不入库
+2026-11-20/fenglin-mianshi/work/
