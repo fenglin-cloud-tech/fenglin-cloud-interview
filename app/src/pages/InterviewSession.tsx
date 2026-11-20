@@ -4,6 +4,7 @@ import { api, ApiError } from '../api';
 import type { Session, Turn } from '../types';
 import { elapsed, formatDateTime } from '../lib/format';
 import { useSpeech } from '../lib/speech';
+import { useTts } from '../lib/tts';
 import {
   Button,
   Callout,
@@ -61,6 +62,13 @@ export function InterviewSession() {
     }, []),
   );
 
+  const tts = useTts();
+  const [timer, setTimer] = useState<{ turnId: number; left: number } | null>(null);
+  const [timedOutEmpty, setTimedOutEmpty] = useState(false);
+  const answerRef = useRef(answer);
+  answerRef.current = answer;
+  const timeoutRef = useRef<number | null>(null);
+
   const activeTurn: Turn | null = session?.pendingTurn ?? null;
 
   useEffect(() => {
@@ -71,12 +79,30 @@ export function InterviewSession() {
     }
   }, [activeTurn?.id]);
 
-  const submit = async () => {
+  // 换题即重置计时与朗读状态；题干变化时不会沿用上一题的剩余时间
+  useEffect(() => {
+    if (!activeTurn) {
+      setTimer(null);
+      return;
+    }
+    setTimer({ turnId: activeTurn.id, left: limitFor(activeTurn.round_key) });
+    setTimedOutEmpty(false);
+    timeoutRef.current = null;
+    tts.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTurn?.id]);
+
+  const submit = async (opts: { auto?: boolean } = {}) => {
     if (!activeTurn) return;
-    if (answer.trim().length < 2) return toast('先写几句再提交', 'err');
+    const text = answer.trim();
+    if (text.length < 2) {
+      if (!opts.auto) toast('先写几句再提交', 'err');
+      return;
+    }
+    tts.stop();
     setSubmitting(true);
     try {
-      const res = await api.answer(ivId, { turnId: activeTurn.id, answer: answer.trim() });
+      const res = await api.answer(ivId, { turnId: activeTurn.id, answer: text });
       setSession(res.session);
       setAllDone(res.allDone);
       window.setTimeout(() => feedbackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
@@ -102,6 +128,33 @@ export function InterviewSession() {
       setFinishing(false);
     }
   };
+
+  // 限时：每秒递减，到点自动提交已写内容；未作答时只提示，不提交空答案
+  useEffect(() => {
+    if (!activeTurn || submitting || !timer || timer.turnId !== activeTurn.id) return;
+    if (timer.left <= 0) {
+      if (timeoutRef.current === activeTurn.id) return;
+      timeoutRef.current = activeTurn.id;
+      const text = answerRef.current.trim();
+      if (text.length >= 2) {
+        toast('时间到，已自动提交当前作答内容', 'ok');
+        void submit({ auto: true });
+      } else {
+        setTimedOutEmpty(true);
+        toast('时间到：本题还没有有效作答，未自动提交', 'err');
+      }
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setTimer((prev) => (prev && prev.turnId === activeTurn.id ? { ...prev, left: prev.left - 1 } : prev));
+    }, 1000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer, activeTurn?.id, submitting]);
+
+  const limit = limitFor(activeTurn?.round_key);
+  const left = timer && activeTurn && timer.turnId === activeTurn.id ? timer.left : limit;
+  const expired = !!activeTurn && left <= 0;
 
   if (loading) return <Loading label="进入考场" lines={3} />;
   if (error || !session) return <ErrorState message={error || '面试不存在'} onRetry={load} />;
@@ -203,13 +256,44 @@ export function InterviewSession() {
               </div>
               <p className="q-text">{activeTurn.question}</p>
 
+              <div className="q-tools">
+                <div className="row gap-8 wrap">
+                  {tts.supported ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant={tts.speaking ? 'danger' : 'ghost'}
+                        onClick={() => (tts.speaking ? tts.stop() : tts.speak(activeTurn.question))}
+                        disabled={!tts.canSpeak && !tts.speaking}
+                      >
+                        {tts.speaking ? '■ 停止朗读' : '▶ 朗读题目'}
+                      </Button>
+                      <button type="button" className="q-rate" onClick={tts.cycleRate} title="切换朗读语速">
+                        语速 {tts.rate === 1 ? '1.0' : tts.rate}×
+                      </button>
+                    </>
+                  ) : (
+                    <span className="speech-na">{tts.note || '语音朗读不可用'}</span>
+                  )}
+                  {tts.supported && !tts.canSpeak && <span className="speech-na">{tts.note}</span>}
+                </div>
+                <div className={`q-clock ${expired ? 'over' : left <= 30 ? 'warn' : ''}`} aria-live="polite">
+                  <span>本题限时 {clockText(limit)}</span>
+                  <strong>{expired ? '已超时' : clockText(left)}</strong>
+                </div>
+              </div>
+              <p className="q-timer-note">最后 30 秒计时变色；时间到会自动提交已写内容，未作答不会提交空答案。</p>
+
               <div className="answer-box">
                 <textarea
                   className="textarea answer-input"
                   rows={9}
                   placeholder="像真的面试一样说出来，再打成文字。建议：先给结论，再讲情境、你的动作、结果。"
                   value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
+                  onChange={(e) => {
+                    if (tts.speaking) tts.stop();
+                    setAnswer(e.target.value);
+                  }}
                 />
                 <div className="answer-bar">
                   <div className="row gap-8 wrap">
@@ -217,7 +301,10 @@ export function InterviewSession() {
                       <Button
                         size="sm"
                         variant={speech.listening ? 'danger' : 'ghost'}
-                        onClick={() => (speech.listening ? speech.stop() : speech.start())}
+                        onClick={() => {
+                          tts.stop();
+                          speech.listening ? speech.stop() : speech.start();
+                        }}
                       >
                         {speech.listening ? '■ 停止录音' : '🎙 语音作答'}
                       </Button>
@@ -233,6 +320,13 @@ export function InterviewSession() {
                     提交并看反馈
                   </Button>
                 </div>
+                {timedOutEmpty && !submitting && (
+                  <Callout tone="warn">
+                    {answer.trim()
+                      ? '本题已超时，但作答内容过短，未自动提交；确认后可以手动提交。'
+                      : '本题已超时，且没有任何作答内容，因此没有自动提交；可以继续写完再手动提交。'}
+                  </Callout>
+                )}
                 {speech.error && <Callout tone="warn">{speech.error}</Callout>}
               </div>
             </Card>
@@ -348,6 +442,20 @@ export function InterviewSession() {
       </div>
     </div>
   );
+}
+
+/** 按轮次设定单题限时（秒）：自我介绍 60s，专业 150s，行为 120s，反问 90s。 */
+const ROUND_LIMITS: Record<string, number> = { intro: 60, professional: 150, behavioral: 120, reverse: 90 };
+
+function limitFor(roundKey?: string): number {
+  return (roundKey && ROUND_LIMITS[roundKey]) || 120;
+}
+
+function clockText(sec: number): string {
+  const safe = Math.max(0, sec);
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function scoreTone(score: number | null): string {

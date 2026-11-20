@@ -197,6 +197,8 @@ export function DemoTour() {
   };
 
   if (!active) {
+    // 考场页不接受悬浮入口：会遮住「提交并看反馈」等主操作；需要演示时从「模拟面试」页进入。
+    if (/^\/interviews\/\d+\/session/.test(location.pathname)) return null;
     return (
       <button type="button" className="guide-fab" onClick={() => setActive(true)}>
         <span className="guide-fab-dot" />

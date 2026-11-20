@@ -3418,6 +3418,96 @@ select.input {
   color: var(--ink);
 }
 
+.q-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+
+.q-rate {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--line-2);
+  padding-bottom: 1px;
+}
+
+.q-rate:hover {
+  color: var(--ink);
+}
+
+.q-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.q-clock strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.q-clock.warn {
+  border-color: var(--amber);
+  background: var(--note-bg);
+}
+
+.q-clock.warn,
+.q-clock.warn strong {
+  color: var(--amber);
+}
+
+.q-clock.warn strong {
+  animation: q-clock-blink 1s ease-in-out infinite;
+}
+
+.q-clock.over {
+  border-color: var(--amber);
+  background: var(--note-bg);
+}
+
+.q-clock.over,
+.q-clock.over strong {
+  color: var(--amber);
+  animation: none;
+}
+
+.q-timer-note {
+  margin-top: 5px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--muted-2);
+}
+
+@keyframes q-clock-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-clock.warn strong {
+    animation: none;
+  }
+}
+
 .answer-box {
   margin-top: 12px;
 }
