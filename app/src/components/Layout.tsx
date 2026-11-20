@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../state';
+import { lockBodyScroll } from '../lib/scrollLock';
 
 const ICONS: Record<string, ReactNode> = {
   home: (
@@ -63,6 +64,12 @@ export function Layout() {
     useApp();
   const [open, setOpen] = useState(false);
   const location = useLocation();
+
+  // 移动端抽屉打开时锁住背景滚动，抽屉自身是唯一滚动容器
+  useEffect(() => {
+    if (!open) return;
+    return lockBodyScroll();
+  }, [open]);
 
   return (
     <div className="shell">

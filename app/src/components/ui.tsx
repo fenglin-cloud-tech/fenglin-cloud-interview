@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { copyText } from '../lib/download';
+import { lockBodyScroll } from '../lib/scrollLock';
 
 /* ---------------- 按钮 ---------------- */
 
@@ -240,6 +241,9 @@ export function ScoreRing({
 
 /* ---------------- 交互 ---------------- */
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({
   open,
   title,
@@ -256,27 +260,66 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  // 单层滚动：遮罩定位在打开时的页面滚动位置，之后跟随页面一起滚动，不锁 body
-  const [maskTop, setMaskTop] = useState(0);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
-    setMaskTop(window.scrollY);
+    const host = ref.current;
+    const previous = document.activeElement as HTMLElement | null;
+    // 视口内固定 + 背景滚动锁，关闭时恢复原滚动位置
+    const release = lockBodyScroll();
+    const raf = requestAnimationFrame(() => {
+      const target =
+        host?.querySelector<HTMLElement>('[data-autofocus]') ??
+        host?.querySelector<HTMLElement>(FOCUSABLE) ??
+        host;
+      target?.focus();
+    });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !host) return;
+      const nodes = [...host.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+      if (!nodes.length) {
+        e.preventDefault();
+        host.focus();
+        return;
+      }
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === host)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
-      document.removeEventListener('keydown', onKey);
+      cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKey, true);
+      release();
+      // preventScroll：避免关闭时把页面滚回触发元素而破坏刚恢复的滚动位置
+      previous?.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
+
   if (!open) return null;
   return createPortal(
-    <div
-      className="modal-mask"
-      style={{ top: maskTop }}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+    <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div
+        className={`modal ${wide ? 'modal-wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        ref={ref}
+      >
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="关闭">

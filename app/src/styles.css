@@ -117,6 +117,8 @@ img {
   top: 0;
   height: 100vh;
   z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .brand {
@@ -1063,34 +1065,26 @@ img {
 /* ---------------- 弹窗 / 标签页 ---------------- */
 
 .modal-mask {
-  /* 单层滚动：遮罩贴着文档定位（top 由组件写为打开时的 scrollY），随页面一起滚动 */
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  min-height: 100vh;
+  /* 视口内固定：遮罩吸收滚轮/触摸，背景由 scrollLock 锁住 */
+  position: fixed;
+  inset: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   padding: 24px;
   z-index: 100;
-  isolation: isolate;
-}
-
-/* 视口级暗色背景：始终盖住当前视口，拦截页面点击；点击它等于点击遮罩，可关闭弹窗 */
-.modal-mask::before {
-  content: '';
-  position: fixed;
-  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
   background: rgba(28, 26, 22, 0.42);
   backdrop-filter: blur(2px);
-  z-index: -1;
 }
 
 .modal {
   background: var(--card);
   border-radius: 5px;
   width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   display: flex;
   flex-direction: column;
   box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.5);
@@ -1105,6 +1099,7 @@ img {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-bottom: 1px solid var(--line);
 }
@@ -1115,9 +1110,15 @@ img {
 
 .modal-body {
   padding: 18px 20px;
+  /* 弹窗内唯一滚动容器，超长内容在这里滚，页面不动 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* 弹窗内不做二次滚动，超长内容交给页面级滚动条 */
+/* 弹窗内的预览区不再单独滚动，交给 .modal-body */
 .modal .paper-scroll {
   max-height: none;
   overflow: visible;
