@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { Job } from '../types';
 import { formatDateTime } from '../lib/format';
-import { Button, Card, Chip, EmptyState, ErrorState, Field, Loading, Modal, PageHeader } from '../components/ui';
+import { Button, Card, Chip, EmptyState, ErrorState, Field, Modal, PageHeader, PageSkeleton } from '../components/ui';
 
 export function Jobs() {
   const navigate = useNavigate();
@@ -119,7 +119,7 @@ export function Jobs() {
       />
 
       {error && <ErrorState message={error} onRetry={load} />}
-      {loading && <Loading label="读取岗位" lines={2} />}
+      {loading && <PageSkeleton variant="cards" label="正在读取岗位" />}
 
       {!loading && jobs.length === 0 && (
         <Card>

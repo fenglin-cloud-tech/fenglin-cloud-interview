@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../state';
 import { lockBodyScroll } from '../lib/scrollLock';
@@ -67,6 +67,7 @@ export function Layout() {
   const { activeResume, activeJob, resumes, jobs, setActiveResume, setActiveJob, aiConfigured, sharedDemo, toasts, dismissToast } =
     useApp();
   const [open, setOpen] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
   const location = useLocation();
 
   // 移动端抽屉打开时锁住背景滚动，抽屉自身是唯一滚动容器
@@ -75,9 +76,63 @@ export function Layout() {
     return lockBodyScroll();
   }, [open]);
 
+  // 移动端抽屉关闭时把侧栏移出可聚焦树，避免 Tab 进入屏幕外的导航
+  useEffect(() => {
+    const host = asideRef.current;
+    if (!host) return;
+    const mq = window.matchMedia('(max-width: 980px)');
+    const apply = () => {
+      if (mq.matches && !open) host.setAttribute('inert', '');
+      else host.removeAttribute('inert');
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [open]);
+
+  // 抽屉焦点圈闭：打开后聚焦首个可操作项，Tab 循环，Esc 关闭并把焦点还给菜单按钮
+  useEffect(() => {
+    if (!open) return;
+    const host = asideRef.current;
+    const previous = document.activeElement as HTMLElement | null;
+    const raf = requestAnimationFrame(() => {
+      host?.querySelector<HTMLElement>('.sidebar-close, .nav-item')?.focus();
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (e.key !== 'Tab' || !host) return;
+      const nodes = [...host.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')].filter(
+        (el) => el.getClientRects().length > 0,
+      );
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKey, true);
+      previous?.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   return (
     <div className="shell">
-      <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <a className="skip-link" href="#main-content">
+        跳到主要内容
+      </a>
+      <aside className={`sidebar ${open ? 'open' : ''}`} id="app-sidebar" ref={asideRef} aria-label="主导航">
         <div className="brand">
           <img className="brand-logo" src="/brand/logo.png" alt="丰麟云面" />
           <div>
@@ -120,7 +175,7 @@ export function Layout() {
         </div>
       </aside>
 
-      {open && <div className="sidebar-mask" onClick={() => setOpen(false)} />}
+      {open && <div className="sidebar-mask" onClick={() => setOpen(false)} aria-hidden="true" />}
 
       <div className="main">
         {sharedDemo && (
@@ -129,7 +184,13 @@ export function Layout() {
           </div>
         )}
         <header className="topbar">
-          <button className="icon-btn menu-btn" onClick={() => setOpen(true)} aria-label="打开菜单">
+          <button
+            className="icon-btn menu-btn"
+            onClick={() => setOpen(true)}
+            aria-label="打开菜单"
+            aria-expanded={open}
+            aria-controls="app-sidebar"
+          >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
             </svg>
@@ -176,7 +237,7 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="content">
+        <main className="content" id="main-content" tabIndex={-1}>
           <Outlet />
         </main>
 

@@ -21,7 +21,7 @@
   --ink: #182a33;
   --ink-2: #31464f;
   --muted: #556c75;
-  --muted-2: #7a8f97;
+  --muted-2: #5a6f78;
 
   /* 提示块：全站提示/说明类底色统一取此目标色（#E9EFF6，取自参考图提示条） */
   --note-bg: #e9eff6;
@@ -1133,7 +1133,7 @@ select.input {
   background: var(--panel-2);
 }
 
-.empty h3 {
+.empty h2 {
   font-size: 15px;
   margin-bottom: 5px;
 }
@@ -7252,3 +7252,234 @@ select.input {
   }
 }
 
+
+/* ---------------- 无障碍辅助 ---------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: -60px;
+  z-index: 200;
+  padding: 9px 14px;
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus-visible {
+  top: 12px;
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ---------------- 结构化骨架 ---------------- */
+
+.sk-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sk {
+  display: block;
+  background: linear-gradient(90deg, var(--panel-3) 0%, var(--skeleton-sheen) 50%, var(--panel-3) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+  border-radius: 2px;
+}
+
+.sk-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sk-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.sk-grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sk-cols2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.sk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sk-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 3px;
+}
+
+.sk-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sk-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sk-matrix {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sk-exam-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sk-exam {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+.sk-form-row {
+  display: flex;
+  gap: 12px;
+}
+
+/* ---------------- 模型调用进度 ---------------- */
+
+.busy-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--accent-line);
+  border-left: 3px solid var(--cyan);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.busy-progress.compact {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+
+.busy-progress .spinner {
+  color: var(--cyan);
+}
+
+.busy-label {
+  font-weight: 550;
+}
+
+.busy-note {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.busy-elapsed {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- 动效偏好 ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .sk {
+    animation: none;
+    background: var(--panel-3);
+  }
+}
+
+@media screen and (max-width: 1100px) {
+  .sk-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sk-grid3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sk-exam {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .sk-cols2,
+  .sk-grid3 {
+    grid-template-columns: 1fr;
+  }
+
+  .sk-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sk-form-row {
+    flex-direction: column;
+  }
+}

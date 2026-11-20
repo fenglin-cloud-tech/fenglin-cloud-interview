@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useApp } from '../state';
-import { Button, Callout, Card, Field, PageHeader, Stat } from '../components/ui';
+import { Button, Callout, Card, Field, PageHeader, PageSkeleton, Stat } from '../components/ui';
 
 export function ProfilePage() {
-  const { profile, saveProfile, resumes, jobs, activeResume, activeJob, aiConfigured, model, toast } = useApp();
+  const { profile, saveProfile, resumes, jobs, activeResume, activeJob, aiConfigured, model, loading, toast } = useApp();
   const [form, setForm] = useState({ nickname: '', school: '', major: '', grade: '' });
   const [saving, setSaving] = useState(false);
   const [counts, setCounts] = useState<{ interviews: number; reviews: number; bank: number } | null>(null);
@@ -48,6 +48,9 @@ export function ProfilePage() {
         desc="丰麟云面不要求注册。这里只有一份「本机档案」，用于给模板预填姓名与学校；所有数据都在你自己的数据库文件里。"
       />
 
+      {loading && !profile ? (
+        <PageSkeleton variant="profile" label="正在读取本地档案" />
+      ) : (
       <div className="profile-grid">
         <Card title="档案信息" subtitle="仅用于模板预填与简历抬头，不会发送给模型除非出现在简历正文里">
           <div className="form-row">
@@ -107,6 +110,7 @@ export function ProfilePage() {
           </Card>
         </div>
       </div>
+      )}
     </div>
   );
 }

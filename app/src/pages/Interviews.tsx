@@ -12,9 +12,9 @@ import {
   EmptyState,
   ErrorState,
   Field,
-  Loading,
   Modal,
   PageHeader,
+  PageSkeleton,
 } from '../components/ui';
 
 const FALLBACK_DIRECTIONS = [
@@ -160,17 +160,17 @@ export function Interviews() {
             </Field>
           </div>
 
-          <div className="seg seg-wrap">
-            <button className={mode === 'resume' ? 'on' : ''} onClick={() => setMode('resume')}>
+          <div className="seg seg-wrap" role="group" aria-label="出题方式">
+            <button className={mode === 'resume' ? 'on' : ''} aria-pressed={mode === 'resume'} onClick={() => setMode('resume')}>
               只用简历题
             </button>
-            <button className={mode === 'mixed' ? 'on' : ''} onClick={() => setMode('mixed')}>
+            <button className={mode === 'mixed' ? 'on' : ''} aria-pressed={mode === 'mixed'} onClick={() => setMode('mixed')}>
               简历 + 常见题
             </button>
-            <button className={mode === 'common' ? 'on' : ''} onClick={() => setMode('common')}>
+            <button className={mode === 'common' ? 'on' : ''} aria-pressed={mode === 'common'} onClick={() => setMode('common')}>
               只用常见题
             </button>
-            <button className={mode === 'bank' ? 'on' : ''} onClick={() => setMode('bank')}>
+            <button className={mode === 'bank' ? 'on' : ''} aria-pressed={mode === 'bank'} onClick={() => setMode('bank')}>
               从题库再练
             </button>
           </div>
@@ -265,7 +265,7 @@ export function Interviews() {
 
         <Card title="过去 50 场" subtitle="未完成的可以继续作答" className="history-card">
           {error && <ErrorState message={error} onRetry={load} />}
-          {loading && <Loading label="读取记录" lines={2} />}
+          {loading && <PageSkeleton variant="cards" label="正在读取面试记录" />}
           {!loading && list.length === 0 && (
             <EmptyState icon="◷" title="还没有面试记录" desc="左边选好简历，点「开始面试」即可。" />
           )}

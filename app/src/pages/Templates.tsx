@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import type { ResumeTemplate } from '../types';
 import { renderMarkdown } from '../lib/markdown';
-import { Button, Card, Chip, ErrorState, Loading, Modal, PageHeader } from '../components/ui';
+import { Button, Card, Chip, ErrorState, Modal, PageHeader, PageSkeleton } from '../components/ui';
 
 export function Templates() {
   const navigate = useNavigate();
@@ -32,7 +32,7 @@ export function Templates() {
       />
 
       {error && <ErrorState message={error} onRetry={load} />}
-      {loading && <Loading label="加载模板" lines={4} />}
+      {loading && <PageSkeleton variant="cards" label="正在加载模板" />}
 
       <div className="template-grid">
         {items.map((t, i) => (

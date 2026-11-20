@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { Resume } from '../types';
 import { formatDateTime } from '../lib/format';
-import { Button, Card, Chip, EmptyState, ErrorState, Field, Loading, Modal, PageHeader } from '../components/ui';
+import { Button, Card, Chip, EmptyState, ErrorState, Field, Modal, PageHeader, PageSkeleton } from '../components/ui';
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: '手动创建',
@@ -131,7 +131,7 @@ export function Resumes() {
       />
 
       {error && <ErrorState message={error} onRetry={load} />}
-      {loading && <Loading label="读取简历" lines={2} />}
+      {loading && <PageSkeleton variant="cards" label="正在读取简历" />}
 
       {!loading && resumes.length === 0 && (
         <Card>

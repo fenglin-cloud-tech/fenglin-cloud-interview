@@ -9,6 +9,7 @@ import { formatDateTime } from '../lib/format';
 import { renderMarkdown } from '../lib/markdown';
 import {
   Button,
+  BusyProgress,
   Callout,
   Card,
   Chip,
@@ -16,8 +17,8 @@ import {
   EmptyState,
   ErrorState,
   Field,
-  Loading,
   PageHeader,
+  PageSkeleton,
   ScoreRing,
   SourceBadge,
   Tabs,
@@ -39,7 +40,8 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function Optimize() {
   const [params] = useSearchParams();
-  const { resumes, jobs, activeResume, activeJob, refreshResumes, setActiveResume, setActiveJob, toast } = useApp();
+  const { resumes, jobs, activeResume, activeJob, loading: ctxLoading, refreshResumes, setActiveResume, setActiveJob, toast } =
+    useApp();
 
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
@@ -49,11 +51,13 @@ export function Optimize() {
   const [tab, setTab] = useState('advice');
 
   const [sugLoading, setSugLoading] = useState(false);
+  const [sugStart, setSugStart] = useState(0);
   const [sugError, setSugError] = useState<string | null>(null);
   const [sug, setSug] = useState<SuggestionResult | null>(null);
   const [sugMeta, setSugMeta] = useState<LlmMeta | null>(null);
 
   const [matchLoading, setMatchLoading] = useState(false);
+  const [matchStart, setMatchStart] = useState(0);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [match, setMatch] = useState<JdMatchResult | null>(null);
   const [matchMeta, setMatchMeta] = useState<LlmMeta | null>(null);
@@ -65,6 +69,7 @@ export function Optimize() {
   const [baseline, setBaseline] = useState(activeResume?.content ?? '');
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatStart, setChatStart] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
@@ -137,6 +142,7 @@ export function Optimize() {
     const runId = sugRunRef.current + 1;
     sugRunRef.current = runId;
     setSugLoading(true);
+    setSugStart(Date.now());
     setSugError(null);
     setSug(null);
     try {
@@ -168,6 +174,7 @@ export function Optimize() {
   const runMatch = async () => {
     if (jd.trim().length < 30) return toast('JD 太短，请粘贴完整的岗位描述', 'err');
     setMatchLoading(true);
+    setMatchStart(Date.now());
     setMatchError(null);
     try {
       const { result, meta, savedId } = await api.jdMatch({ resumeText, jd, resumeId, jobId });
@@ -192,6 +199,7 @@ export function Optimize() {
     setMessages(nextMessages);
     setChatInput('');
     setChatLoading(true);
+    setChatStart(Date.now());
     setChatError(null);
     try {
       const { result } = await api.iterate({
@@ -240,6 +248,19 @@ export function Optimize() {
 
   const diff = useMemo(() => (showDiff ? diffLines(baseline, draft) : []), [showDiff, baseline, draft]);
   const current = resumes.find((r) => r.id === resumeId);
+
+  if (ctxLoading && resumes.length === 0) {
+    return (
+      <div className="page">
+        <PageHeader
+          eyebrow="模块 1 · 简历优化"
+          title="按板块批注，再按 JD 对标"
+          desc="建议会告诉你「为什么改」；匹配分析会告诉你「缺什么」。多轮迭代后的版本可以另存，所有改动可对比。"
+        />
+        <PageSkeleton variant="cards" label="正在读取简历与岗位" />
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -350,7 +371,13 @@ export function Optimize() {
             <span className="mono small muted">在 03 · 建议栏触发生成</span>
           </div>
 
-          {sugLoading && <Loading label="正在逐板块阅读简历（后台生成，通常 20-40 秒）" lines={4} />}
+          {sugLoading && (
+            <BusyProgress
+              label="正在逐板块阅读简历，生成修改建议"
+              start={sugStart}
+              note="后台生成，通常 20-40 秒"
+            />
+          )}
           {sugError && <ErrorState message={sugError} onRetry={() => void runSuggestions()} />}
 
           {sug && (
@@ -433,7 +460,7 @@ export function Optimize() {
             </div>
           </Card>
 
-          {matchLoading && <Loading label="正在对齐 JD 要求与简历证据" lines={3} />}
+          {matchLoading && <BusyProgress label="正在对齐 JD 要求与简历证据" start={matchStart} note="通常 10-30 秒" />}
           {matchError && <ErrorState message={matchError} onRetry={() => void runMatch()} />}
 
           {match && (
@@ -546,13 +573,19 @@ export function Optimize() {
                   <div className="bubble-text">{m.content}</div>
                 </div>
               ))}
-              {chatLoading && <div className="bubble bubble-assistant"><div className="bubble-role">教练</div><div className="bubble-text muted">正在改写…</div></div>}
+              {chatLoading && (
+                <div className="bubble bubble-assistant">
+                  <div className="bubble-role">教练</div>
+                  <BusyProgress compact label="正在按你的要求改写" start={chatStart} />
+                </div>
+              )}
             </div>
             {chatError && <ErrorState message={chatError} onRetry={() => void sendChat()} />}
             <div className="chat-input">
               <textarea
                 className="textarea"
                 rows={2}
+                aria-label="修改要求"
                 placeholder="输入修改要求，Enter 发送，Shift+Enter 换行"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}

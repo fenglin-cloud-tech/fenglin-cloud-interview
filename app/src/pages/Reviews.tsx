@@ -12,9 +12,9 @@ import {
   EmptyState,
   ErrorState,
   Field,
-  Loading,
   Modal,
   PageHeader,
+  PageSkeleton,
 } from '../components/ui';
 
 const emptyForm = { question: '', myAnswer: '', performance: '', improvement: '', rating: 3, tags: '' };
@@ -191,6 +191,7 @@ export function Reviews() {
         <div className="row gap-8 wrap">
           <input
             className="input search"
+            aria-label="搜索复盘"
             placeholder="搜索题目或改进点…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -207,7 +208,7 @@ export function Reviews() {
       </Card>
 
       {error && <ErrorState message={error} onRetry={() => load()} />}
-      {loading && <Loading label="读取复盘" lines={2} />}
+      {loading && <PageSkeleton variant="cards" label="正在读取复盘记录" />}
 
       {!loading && items.length === 0 && (
         <Card>

@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import type { Session } from '../types';
 import { formatDateTime } from '../lib/format';
 import { downloadText, slugDate } from '../lib/download';
-import { Button, Card, Chip, CopyButton, ErrorState, Loading, ScoreRing } from '../components/ui';
+import { Button, Card, Chip, CopyButton, ErrorState, PageSkeleton, ScoreRing } from '../components/ui';
 import { useApp } from '../state';
 
 export function InterviewReport() {
@@ -76,7 +76,13 @@ export function InterviewReport() {
     return lines.join('\n');
   };
 
-  if (loading) return <Loading label="加载报告" />;
+  if (loading) {
+    return (
+      <div className="page">
+        <PageSkeleton variant="cards" label="正在加载面试报告" />
+      </div>
+    );
+  }
   if (error || !session) return <ErrorState message={error || '报告不存在'} onRetry={load} />;
   if (!report) {
     return (

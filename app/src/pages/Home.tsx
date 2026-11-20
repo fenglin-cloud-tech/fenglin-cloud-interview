@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import { ROUND_LABEL, formatDateTime } from '../lib/format';
 import { openPrintView } from '../lib/download';
-import { Button, Card, Chip, EmptyState, ErrorState, Loading, Modal, PageHeader, Stat } from '../components/ui';
+import { Button, Card, Chip, EmptyState, ErrorState, Modal, PageHeader, PageSkeleton, Stat } from '../components/ui';
 import { GrowthPanel } from '../components/GrowthPanel';
 import type { DemoStatus, GrowthStats } from '../types';
 
@@ -207,7 +207,7 @@ export function Home() {
       {error && <ErrorState message={error} onRetry={load} />}
 
       {loading && !data ? (
-        <Loading label="正在读取你的训练数据" />
+        <PageSkeleton variant="home" label="正在读取你的训练数据" />
       ) : (
         <>
           <div className="matrix-head">

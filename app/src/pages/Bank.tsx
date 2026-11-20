@@ -12,9 +12,9 @@ import {
   EmptyState,
   ErrorState,
   Field,
-  Loading,
   Modal,
   PageHeader,
+  PageSkeleton,
   Stat,
 } from '../components/ui';
 
@@ -278,7 +278,7 @@ export function Bank() {
       </Card>
 
       {error && <ErrorState message={error} onRetry={load} />}
-      {loading && <Loading label="读取题库" lines={3} />}
+      {loading && <PageSkeleton variant="cards" label="正在读取题库" />}
 
       {!loading && items.length === 0 && (
         <Card>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../api';
-import { Button, Callout, Card, Chip, EmptyState, Field, Modal, PageHeader } from '../components/ui';
+import { Button, Callout, Card, Chip, EmptyState, Field, Modal, PageHeader, PageSkeleton } from '../components/ui';
 import { useApp } from '../state';
 import type { ApplicationRecord, ApplicationStage } from '../types';
 
@@ -227,6 +227,8 @@ export function Applications() {
         desc="目标岗位用来沉淀 JD 与匹配；投递记录用来跟踪你实际投出去的每一次申请。两者可以关联，也可以独立存在。"
       />
 
+      {!loading && (
+        <>
       <div className="app-stats">
         <div className="app-stat">
           <span>投递总数</span>
@@ -260,14 +262,19 @@ export function Applications() {
       </div>
 
       <div className="app-toolbar">
-        <div className="app-filters" role="tablist" aria-label="按阶段筛选">
-          <button className={`app-filter ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>
+        <div className="app-filters" role="group" aria-label="按阶段筛选投递">
+          <button
+            className={`app-filter ${filter === 'all' ? 'on' : ''}`}
+            aria-pressed={filter === 'all'}
+            onClick={() => setFilter('all')}
+          >
             全部 <b>{apps.length}</b>
           </button>
           {STAGES.map((s) => (
             <button
               key={s.key}
               className={`app-filter ${filter === s.key ? 'on' : ''}`}
+              aria-pressed={filter === s.key}
               onClick={() => setFilter(s.key)}
             >
               {s.label} <b>{countOf(s.key)}</b>
@@ -276,11 +283,13 @@ export function Applications() {
         </div>
         <Button onClick={openCreate}>新增投递</Button>
       </div>
+        </>
+      )}
+
+      <h2 className="sr-only">投递记录列表</h2>
 
       {loading ? (
-        <Card>
-          <p className="muted">正在读取投递记录…</p>
-        </Card>
+        <PageSkeleton variant="board" label="正在读取投递记录" />
       ) : apps.length === 0 ? (
         <Card>
           <EmptyState
@@ -516,7 +525,12 @@ export function Applications() {
                 ))}
               </ul>
               <div className="app-link-add">
-                <select className="input" value={pickInterview} onChange={(e) => setPickInterview(e.target.value)}>
+                <select
+                  className="input"
+                  aria-label="选择一场未关联的面试"
+                  value={pickInterview}
+                  onChange={(e) => setPickInterview(e.target.value)}
+                >
                   <option value="">选择一场未关联的面试</option>
                   {availableInterviews.map((i) => (
                     <option key={i.id} value={i.id}>
@@ -553,7 +567,12 @@ export function Applications() {
                 ))}
               </ul>
               <div className="app-link-add">
-                <select className="input" value={pickReview} onChange={(e) => setPickReview(e.target.value)}>
+                <select
+                  className="input"
+                  aria-label="选择一条未关联的复盘"
+                  value={pickReview}
+                  onChange={(e) => setPickReview(e.target.value)}
+                >
                   <option value="">选择一条未关联的复盘</option>
                   {availableReviews.map((r) => (
                     <option key={r.id} value={r.id}>

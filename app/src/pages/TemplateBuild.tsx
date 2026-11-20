@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { ResumeTemplate } from '../types';
 import { renderMarkdown } from '../lib/markdown';
-import { Button, Callout, Card, Chip, ErrorState, Field, Loading, PageHeader, SourceBadge } from '../components/ui';
+import { Button, Callout, Card, Chip, ErrorState, Field, PageHeader, PageSkeleton, SourceBadge } from '../components/ui';
 
 export function TemplateBuild() {
   const { id } = useParams();
@@ -143,7 +143,12 @@ export function TemplateBuild() {
     }
   };
 
-  if (loading) return <Loading label="加载模板" />;
+  if (loading)
+    return (
+      <div className="page">
+        <PageSkeleton variant="cards" label="正在加载模板" />
+      </div>
+    );
   if (error || !template) return <ErrorState message={error || '模板不存在'} onRetry={() => navigate('/templates')} />;
 
   const sec = template.sections[step];

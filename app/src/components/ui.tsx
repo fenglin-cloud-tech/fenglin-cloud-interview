@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { copyText } from '../lib/download';
 import { lockBodyScroll } from '../lib/scrollLock';
@@ -186,7 +186,7 @@ export function EmptyState({
           icon
         )}
       </div>
-      <h3>{title}</h3>
+      <h2>{title}</h2>
       {desc && <p>{desc}</p>}
       {action && <div className="empty-action">{action}</div>}
     </div>
@@ -202,6 +202,147 @@ export function Loading({ label = '准备中…', lines = 3 }: { label?: string;
       {Array.from({ length: lines }).map((_, i) => (
         <div className="skeleton" key={i} style={{ width: `${92 - i * 13}%` }} />
       ))}
+    </div>
+  );
+}
+
+/* 结构化骨架：尺寸贴近真实卡片，避免数据返回后大幅位移 */
+type SkeletonVariant = 'cards' | 'home' | 'board' | 'exam' | 'profile';
+
+export function PageSkeleton({ variant = 'cards', label = '正在加载数据' }: { variant?: SkeletonVariant; label?: string }) {
+  const bar = (w: string, h = 12, key?: number) => (
+    <span key={key} className="sk" style={{ width: w, height: h }} />
+  );
+  const statStrip = (n: number) => (
+    <div className="sk-stats" aria-hidden>
+      {Array.from({ length: n }).map((_, i) => (
+        <div className="sk-stat" key={i}>
+          {bar('48%', 11, 0)}
+          {bar('34%', 24, 1)}
+          {bar('70%', 10, 2)}
+        </div>
+      ))}
+    </div>
+  );
+  const card = (lines: number, key?: number, extra?: ReactNode) => (
+    <div className="sk-card" key={key} aria-hidden>
+      <div className="sk-card-head">
+        {bar('36%', 15, 0)}
+        {bar('14%', 12, 1)}
+      </div>
+      {Array.from({ length: lines }).map((_, i) => bar(`${88 - i * 11}%`, 11, i + 2))}
+      {extra}
+    </div>
+  );
+
+  return (
+    <div className={`sk-page sk-${variant}`} role="status" aria-live="polite" aria-busy="true" aria-label={label}>
+      {variant === 'home' && (
+        <>
+          <div className="sk-matrix" aria-hidden>
+            {bar('140px', 10, 0)}
+            {bar('90px', 10, 1)}
+          </div>
+          {statStrip(5)}
+          <div className="sk-cols2" aria-hidden>
+            {card(5, 0)}
+            {card(4, 1)}
+          </div>
+        </>
+      )}
+
+      {variant === 'board' && (
+        <>
+          {statStrip(5)}
+          <div className="sk-toolbar" aria-hidden>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <span key={i} className="sk" style={{ width: 72, height: 27, borderRadius: 3 }} />
+            ))}
+          </div>
+          <div className="sk-grid3" aria-hidden>
+            {card(3, 0)}
+            {card(3, 1)}
+            {card(3, 2)}
+          </div>
+        </>
+      )}
+
+      {variant === 'exam' && (
+        <>
+          <div className="sk-exam-head" aria-hidden>
+            {bar('160px', 12, 0)}
+            {bar('52%', 26, 1)}
+            {bar('38%', 12, 2)}
+          </div>
+          <div className="sk-exam" aria-hidden>
+            <div className="sk-card">
+              {bar('24%', 12, 0)}
+              {bar('86%', 17, 1)}
+              {bar('96%', 120, 2)}
+              {bar('100%', 11, 3)}
+            </div>
+            <div className="sk-side">
+              {card(4, 0)}
+              {card(3, 1)}
+            </div>
+          </div>
+        </>
+      )}
+
+      {variant === 'profile' && (
+        <div className="sk-cols2" aria-hidden>
+          <div className="sk-card">
+            {bar('42%', 15, 0)}
+            <div className="sk-form-row">
+              <span className="sk" style={{ height: 35, flex: 1 }} />
+              <span className="sk" style={{ height: 35, flex: 1 }} />
+            </div>
+            <div className="sk-form-row">
+              <span className="sk" style={{ height: 35, flex: 1 }} />
+              <span className="sk" style={{ height: 35, flex: 1 }} />
+            </div>
+            {bar('30%', 35, 1)}
+          </div>
+          <div className="sk-side">
+            {card(4, 0)}
+            {card(3, 1)}
+          </div>
+        </div>
+      )}
+
+      {variant === 'cards' && (
+        <div className="sk-cards" aria-hidden>
+          {card(4, 0)}
+          {card(3, 1)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 模型调用进度：稳定文案 + 每秒刷新的已用时长，失败时由调用方保留重试入口 */
+export function BusyProgress({
+  label,
+  start,
+  note,
+  compact,
+}: {
+  label: string;
+  start: number;
+  note?: string;
+  compact?: boolean;
+}) {
+  const [sec, setSec] = useState(() => Math.max(0, Math.floor((Date.now() - start) / 1000)));
+  useEffect(() => {
+    const t = window.setInterval(() => setSec(Math.max(0, Math.floor((Date.now() - start) / 1000))), 1000);
+    return () => window.clearInterval(t);
+  }, [start]);
+  return (
+    <div className={`busy-progress${compact ? ' compact' : ''}`}>
+      <span className="spinner" aria-hidden />
+      <span className="busy-label" role="status">{label}</span>
+      {note && <span className="busy-note">{note}</span>}
+      <span className="busy-elapsed" aria-hidden>已用 {sec} 秒</span>
     </div>
   );
 }
@@ -299,6 +440,7 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -355,12 +497,12 @@ export function Modal({
         className={`modal ${wide ? 'modal-wide' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
         tabIndex={-1}
         ref={ref}
       >
         <div className="modal-head">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
               <path d="M5 5l10 10M15 5L5 15" />
@@ -384,15 +526,33 @@ export function Tabs({
   value: string;
   onChange: (key: string) => void;
 }) {
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const next =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? tabs.length - 1
+          : e.key === 'ArrowRight'
+            ? (index + 1) % tabs.length
+            : (index - 1 + tabs.length) % tabs.length;
+    onChange(tabs[next].key);
+    const list = e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    list?.[next]?.focus();
+  };
   return (
     <div className="tabs" role="tablist">
-      {tabs.map((t) => (
+      {tabs.map((t, i) => (
         <button
           key={t.key}
           role="tab"
           aria-selected={value === t.key}
+          tabIndex={value === t.key ? 0 : -1}
           className={`tab ${value === t.key ? 'active' : ''}`}
           onClick={() => onChange(t.key)}
+          onKeyDown={(e) => onKeyDown(e, i)}
         >
           {t.label}
           {t.hint && <span className="tab-hint">{t.hint}</span>}

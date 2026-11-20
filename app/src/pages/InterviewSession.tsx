@@ -7,11 +7,12 @@ import { useSpeech } from '../lib/speech';
 import { useTts } from '../lib/tts';
 import {
   Button,
+  BusyProgress,
   Callout,
   Card,
   Chip,
   ErrorState,
-  Loading,
+  PageSkeleton,
   Progress,
   SourceBadge,
 } from '../components/ui';
@@ -26,8 +27,12 @@ export function InterviewSession() {
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitStart, setSubmitStart] = useState(0);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [allDone, setAllDone] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [finishStart, setFinishStart] = useState(0);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const [bankedTurns, setBankedTurns] = useState<number[]>([]);
   const [bankAdding, setBankAdding] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -35,6 +40,8 @@ export function InterviewSession() {
   const feedbackRef = useRef<HTMLDivElement>(null);
 
   const ivId = Number(id);
+  // 尊重系统的「减少动态效果」：滚动改为瞬时定位
+  const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const load = useCallback(() => {
     setLoading(true);
@@ -77,7 +84,8 @@ export function InterviewSession() {
     if (activeTurn) {
       setAnswer('');
       setAllDone(false);
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setSubmitError(null);
+      bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
     }
   }, [activeTurn?.id]);
 
@@ -103,15 +111,21 @@ export function InterviewSession() {
     }
     tts.stop();
     setSubmitting(true);
+    setSubmitStart(Date.now());
+    setSubmitError(null);
     try {
       const res = await api.answer(ivId, { turnId: activeTurn.id, answer: text });
       setSession(res.session);
       setAllDone(res.allDone);
-      window.setTimeout(() => feedbackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+      window.setTimeout(
+        () => feedbackRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' }),
+        120,
+      );
       if (res.allDone) {
         toast('所有轮次已完成，可以生成报告', 'ok');
       }
     } catch (e) {
+      setSubmitError(e instanceof ApiError ? e.message : '提交失败');
       toast(e instanceof ApiError ? e.message : '提交失败', 'err');
     } finally {
       setSubmitting(false);
@@ -146,11 +160,14 @@ export function InterviewSession() {
 
   const finish = async () => {
     setFinishing(true);
+    setFinishStart(Date.now());
+    setFinishError(null);
     try {
       await api.finishInterview(ivId);
       await refreshJobs();
       navigate(`/interviews/${ivId}/report`);
     } catch (e) {
+      setFinishError(e instanceof ApiError ? e.message : '报告生成失败');
       toast(e instanceof ApiError ? e.message : '报告生成失败', 'err');
     } finally {
       setFinishing(false);
@@ -184,7 +201,13 @@ export function InterviewSession() {
   const left = timer && activeTurn && timer.turnId === activeTurn.id ? timer.left : limit;
   const expired = !!activeTurn && left <= 0;
 
-  if (loading) return <Loading label="进入考场" lines={3} />;
+  if (loading) {
+    return (
+      <div className="page">
+        <PageSkeleton variant="exam" label="正在进入考场" />
+      </div>
+    );
+  }
   if (error || !session) return <ErrorState message={error || '面试不存在'} onRetry={load} />;
 
   const answered = session.turns.filter((t) => t.answer !== null);
@@ -331,6 +354,7 @@ export function InterviewSession() {
                 <textarea
                   className="textarea answer-input"
                   rows={9}
+                  aria-label="作答内容"
                   placeholder="像真的面试一样说出来，再打成文字。建议：先给结论，再讲情境、你的动作、结果。"
                   value={answer}
                   onChange={(e) => {
@@ -371,6 +395,19 @@ export function InterviewSession() {
                   </Callout>
                 )}
                 {speech.error && <Callout tone="warn">{speech.error}</Callout>}
+                {submitting && (
+                  <BusyProgress label="正在生成单题反馈" start={submitStart} note="模型通常需要 10-30 秒" />
+                )}
+                {submitError && !submitting && (
+                  <Callout tone="warn">
+                    <div className="row between wrap gap-8">
+                      <span>本题反馈没有生成成功：{submitError}</span>
+                      <Button size="sm" variant="ink" onClick={() => void submit()}>
+                        重试提交
+                      </Button>
+                    </div>
+                  </Callout>
+                )}
               </div>
             </Card>
           ) : (
@@ -378,6 +415,19 @@ export function InterviewSession() {
               <div className="finish-box">
                 <h3>{allDone ? '所有轮次已完成' : '等待生成下一题'}</h3>
                 <p>生成报告会汇总各轮得分、薄弱环节与复习点，并把题目沉淀到个人题库。</p>
+                {finishing && (
+                  <BusyProgress label="正在汇总各轮得分、薄弱环节与复习点" start={finishStart} note="模型通常需要 20-40 秒" />
+                )}
+                {finishError && !finishing && (
+                  <Callout tone="warn">
+                    <div className="row between wrap gap-8">
+                      <span>报告生成失败：{finishError}</span>
+                      <Button size="sm" variant="ink" onClick={() => void finish()}>
+                        重试生成
+                      </Button>
+                    </div>
+                  </Callout>
+                )}
                 <Button variant="ink" size="lg" onClick={() => void finish()} loading={finishing}>
                   生成面试报告
                 </Button>
