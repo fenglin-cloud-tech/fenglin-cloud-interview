@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { copyText } from '../lib/download';
 
 /* ---------------- 按钮 ---------------- */
@@ -255,21 +256,26 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // 单层滚动：遮罩定位在打开时的页面滚动位置，之后跟随页面一起滚动，不锁 body
+  const [maskTop, setMaskTop] = useState(0);
   useEffect(() => {
     if (!open) return;
+    setMaskTop(window.scrollY);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
     };
   }, [open, onClose]);
   if (!open) return null;
-  return (
-    <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  return createPortal(
+    <div
+      className="modal-mask"
+      style={{ top: maskTop }}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="modal-head">
           <h3>{title}</h3>
@@ -280,7 +286,8 @@ export function Modal({
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
