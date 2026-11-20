@@ -5,6 +5,15 @@ import { localFeedback, localQuestion } from '../fallback.js';
 import { feedbackSchema, questionSchema, reportSchema } from '../schemas.js';
 import type { FeedbackResult, ReportResult } from '../schemas.js';
 import { FOLLOWUP_FOCUS_LABEL, ROUNDS, TOTAL_BASE_QUESTIONS, roundByKey } from '../interview-plan.js';
+import {
+  COMMON_QUESTIONS,
+  COMMON_SOURCE,
+  DIRECTIONS,
+  directionLabel,
+  isDirection,
+  pickCommonQuestion,
+} from '../common-questions.js';
+import type { DirectionKey } from '../common-questions.js';
 import { feedbackPrompt, questionPrompt, reportPrompt } from '../prompts.js';
 import { FOLLOWUP_THRESHOLD, analyzeAnswer, buildFallbackFollowup, calibrateScores } from '../scoring.js';
 import { HttpError, ah, idOf, str } from '../util.js';
@@ -61,24 +70,59 @@ interface PlanRound {
   count: number;
 }
 
+interface SeedInfo {
+  source: 'resume' | 'mixed' | 'common' | 'bank';
+  direction?: DirectionKey;
+  bank: string[];
+}
+
+/** seed_json 兼容两种格式：旧题库模式存 string[]，新模式存 {source, direction}。 */
+function seedOf(iv: InterviewRow): SeedInfo {
+  const raw = parseJson<unknown>(iv.seed_json, null);
+  if (Array.isArray(raw)) {
+    return {
+      source: iv.mode === 'bank' ? 'bank' : 'resume',
+      bank: raw.filter((x): x is string => typeof x === 'string'),
+    };
+  }
+  if (raw && typeof raw === 'object') {
+    const o = raw as { source?: unknown; direction?: unknown };
+    const source = o.source === 'common' || o.source === 'mixed' ? o.source : 'resume';
+    return { source, direction: isDirection(o.direction) ? o.direction : undefined, bank: [] };
+  }
+  return { source: iv.mode === 'bank' ? 'bank' : 'resume', bank: [] };
+}
+
 function planFor(iv: InterviewRow): PlanRound[] {
+  const seed = seedOf(iv);
   if (iv.mode === 'bank') {
-    const seeds = parseJson<string[]>(iv.seed_json, []);
     return [
       {
         key: 'practice',
         name: '题库再练',
         numeral: '练',
         desc: '从你的个人题库里抽题，逐题作答并给反馈',
-        count: Math.max(1, seeds.length),
+        count: Math.max(1, seed.bank.length),
       },
     ];
   }
-  return ROUNDS.map((r) => ({ key: r.key, name: r.name, numeral: r.numeral, desc: r.desc, count: r.count }));
+  const dir = directionLabel(seed.direction);
+  return ROUNDS.map((r) => {
+    let desc = r.desc;
+    if (seed.source === 'common' && (r.key === 'professional' || r.key === 'behavioral')) {
+      desc =
+        r.key === 'professional'
+          ? `「${dir}」方向的常见技术基础与项目题`
+          : `「${dir}」方向的常见行为面试题，用 STAR 作答`;
+    } else if (seed.source === 'mixed' && (r.key === 'professional' || r.key === 'behavioral')) {
+      desc = `${r.desc}，后半段混入「${dir}」常见题`;
+    }
+    return { key: r.key, name: r.name, numeral: r.numeral, desc, count: r.count };
+  });
 }
 
 function totalBase(iv: InterviewRow): number {
-  return iv.mode === 'bank' ? Math.max(1, parseJson<string[]>(iv.seed_json, []).length) : TOTAL_BASE_QUESTIONS;
+  return iv.mode === 'bank' ? Math.max(1, seedOf(iv).bank.length) : TOTAL_BASE_QUESTIONS;
 }
 
 function resumeContent(resumeId: number | null): string {
@@ -103,7 +147,7 @@ async function makeQuestion(
   iv: InterviewRow,
   roundKey: string,
   seedQuestion?: string,
-): Promise<{ question: string; focus: string; source: 'llm' | 'local' | 'builtin' }> {
+): Promise<{ question: string; focus: string; source: 'llm' | 'local' | 'builtin' | 'common' }> {
   const asked = turnsOf(iv.id)
     .filter((t) => t.round_key === roundKey && t.depth === 0)
     .map((t) => t.question);
@@ -114,6 +158,32 @@ async function makeQuestion(
   if (roundKey === 'intro' || roundKey === 'reverse') {
     const q = localQuestion({ roundKey, resumeText, jobTitle, asked });
     return { question: q.question, focus: q.focus, source: 'builtin' };
+  }
+
+  const seed = seedOf(iv);
+  // 以数据库里的当前进度为准：换轮时 iv 是旧快照，question_index 可能还没刷新。
+  const questionIndex = getInterview(iv.id).question_index;
+  const useCommon =
+    !!seed.direction &&
+    !seedQuestion &&
+    (seed.source === 'common' || (seed.source === 'mixed' && questionIndex >= 1));
+  if (useCommon && seed.direction) {
+    const banked = (db.prepare('SELECT question FROM bank_item').all() as { question: string }[]).map((r) => r.question);
+    const allAsked = turnsOf(iv.id).map((t) => t.question);
+    const picked = pickCommonQuestion({
+      direction: seed.direction,
+      roundKey,
+      asked: allAsked,
+      banked,
+      offset: iv.id * 7 + questionIndex * 3,
+    });
+    if (picked) {
+      return {
+        question: picked.question,
+        focus: `${picked.focus} · ${directionLabel(seed.direction)}常见题`,
+        source: 'common',
+      };
+    }
   }
   try {
     const { data, meta } = await chatJSON(
@@ -192,6 +262,18 @@ function sessionPayload(ivId: number) {
   };
 }
 
+interviewRouter.get('/common-questions', (_req, res) => {
+  res.json({
+    source: COMMON_SOURCE,
+    total: COMMON_QUESTIONS.length,
+    directions: DIRECTIONS.map((d) => ({
+      ...d,
+      count: COMMON_QUESTIONS.filter((q) => q.direction === d.key).length,
+    })),
+    questions: COMMON_QUESTIONS,
+  });
+});
+
 interviewRouter.get('/interviews', (_req, res) => {
   const rows = db
     .prepare(
@@ -214,11 +296,16 @@ interviewRouter.post(
   '/interviews',
   ah(async (req, res) => {
     const body = req.body ?? {};
-    const mode = body.mode === 'bank' ? 'bank' : 'resume';
+    const mode =
+      body.mode === 'bank' ? 'bank' : body.mode === 'common' ? 'common' : body.mode === 'mixed' ? 'mixed' : 'resume';
+    const direction = isDirection(body.direction) ? body.direction : undefined;
     const resumeId = body.resumeId ? Number(body.resumeId) : null;
     const jobId = body.jobId ? Number(body.jobId) : null;
     let seeds: string[] = [];
 
+    if ((mode === 'common' || mode === 'mixed') && !direction) {
+      throw new HttpError(400, '请选择一个岗位方向，再开始常见题面试');
+    }
     if (mode === 'bank') {
       const ids: number[] = Array.isArray(body.bankIds) ? body.bankIds.map(Number).filter((n: number) => n > 0) : [];
       if (!ids.length) throw new HttpError(400, '请至少选择 1 道题库题目');
@@ -227,6 +314,14 @@ interviewRouter.post(
         .filter(Boolean) as { question: string }[];
       if (!rows.length) throw new HttpError(400, '选中的题目已不存在');
       seeds = rows.map((r) => r.question);
+    } else if (mode === 'common') {
+      // 常见题专项不依赖简历，但仍可选一份作为上下文
+      if (resumeId) {
+        const resume = db.prepare('SELECT content FROM resume WHERE id = ?').get(resumeId) as
+          | { content: string }
+          | undefined;
+        if (!resume) throw new HttpError(404, '简历不存在');
+      }
     } else {
       if (!resumeId) throw new HttpError(400, '请先选择一份简历');
       const resume = db.prepare('SELECT content FROM resume WHERE id = ?').get(resumeId) as
@@ -238,11 +333,13 @@ interviewRouter.post(
 
     const now = nowIso();
     const firstRound = mode === 'bank' ? 'practice' : ROUNDS[0].key;
+    const seedPayload =
+      mode === 'bank' ? JSON.stringify(seeds) : JSON.stringify({ source: mode, direction: direction ?? null });
     const info = db
       .prepare(
         'INSERT INTO interview (resume_id, job_id, mode, status, round_key, question_index, seed_json, started_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
       )
-      .run(resumeId, jobId, mode, 'active', firstRound, JSON.stringify(seeds), now);
+      .run(resumeId, jobId, mode, 'active', firstRound, seedPayload, now);
     const id = Number(info.lastInsertRowid);
 
     const q = await makeQuestion(getInterview(id), firstRound, mode === 'bank' ? seeds[0] : undefined);
@@ -310,9 +407,12 @@ interviewRouter.post(
       });
     }
 
+    // source 同时承担「题目来源」语义：常见题答完后仍保留 common，避免前端丢失来源标注；
+    // 其他题型沿用原有行为，记录反馈是模型还是本地降级。
+    const sourceAfterAnswer = turn.source === 'common' ? 'common' : source;
     db.prepare(
       'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ? WHERE id = ?',
-    ).run(answer, JSON.stringify(feedback), score, source, nowIso(), turnId);
+    ).run(answer, JSON.stringify(feedback), score, sourceAfterAnswer, nowIso(), turnId);
 
     let nextTurn: TurnRow | null = null;
     let allDone = false;

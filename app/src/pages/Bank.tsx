@@ -330,7 +330,13 @@ export function Bank() {
               <div className="bank-meta">
                 <Chip tone="ink">{b.category}</Chip>
                 <Chip tone={b.source === 'interview' ? 'blue' : b.source === 'review' ? 'amber' : 'default'}>
-                  {b.source === 'interview' ? '面试沉淀' : b.source === 'review' ? '复盘加入' : '手动添加'}
+                  {b.source === 'interview'
+                    ? '面试沉淀'
+                    : b.source === 'review'
+                      ? '复盘加入'
+                      : b.source === 'common'
+                        ? '常见题'
+                        : '手动添加'}
                 </Chip>
                 {b.last_score != null && <span className="muted small">上次 {b.last_score} 分</span>}
                 <span className="muted small">练习 {b.ask_count} 次</span>

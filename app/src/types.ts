@@ -129,7 +129,7 @@ export interface Session {
     id: number;
     resume_id: number | null;
     job_id: number | null;
-    mode: 'resume' | 'bank';
+    mode: 'resume' | 'bank' | 'common' | 'mixed';
     status: 'active' | 'finished';
     round_key: string;
     question_index: number;
@@ -137,7 +137,7 @@ export interface Session {
     ended_at: string | null;
     overall_score: number | null;
     report: ReportResult | null;
-    seed: string[];
+    seed: string[] | { source: 'resume' | 'mixed' | 'common'; direction: string | null };
   };
   resume: { id: number; title: string } | null;
   job: { id: number; title: string; company: string } | null;

@@ -1104,6 +1104,12 @@ select.input {
   background: var(--amber-soft);
 }
 
+.source-badge.common {
+  color: var(--cyan-ink);
+  border-color: var(--accent-line);
+  background: var(--cyan-soft);
+}
+
 /* ---------------- 状态块 ---------------- */
 
 .empty {
@@ -3095,6 +3101,95 @@ select.input {
   color: #ffffff;
 }
 
+.seg-wrap {
+  flex-wrap: wrap;
+}
+
+.seg-wrap button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+/* 常见题来源与样例，沿用靛青提示面板 */
+.common-panel {
+  margin-top: 12px;
+  padding: 11px 12px;
+  background: var(--note-bg);
+  border: 1px dashed var(--line-3);
+}
+
+.common-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.common-panel-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.common-panel-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.common-panel-note {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.common-panel .field {
+  margin-bottom: 10px;
+}
+
+.common-panel .field:last-child {
+  margin-bottom: 0;
+}
+
+.common-samples {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--line-2);
+  display: grid;
+  gap: 6px;
+}
+
+.common-samples li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.common-kind {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--cyan-ink);
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  padding: 0 5px;
+  line-height: 1.7;
+  margin-top: 1px;
+}
+
+.common-foot {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 .bank-picker {
   margin-top: 12px;
 }
@@ -3503,6 +3598,26 @@ select.input {
   margin-left: auto;
 }
 
+.q-source-note {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-top: 4px;
+  border-left: 2px solid var(--line-3);
+  padding-left: 7px;
+}
+
+.common-mark {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--cyan-ink);
+  border: 1px solid var(--line-2);
+  background: var(--cyan-soft);
+  padding: 0 4px;
+  line-height: 1.6;
+  flex: none;
+}
+
 .q-text {
   font-size: 16px;
   font-weight: 600;
@@ -3789,6 +3904,36 @@ select.input {
   border-top: 1px dashed var(--line-2);
   padding-top: 7px;
   line-height: 1.65;
+}
+
+.fb-bank {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px dashed var(--line-3);
+  background: var(--note-bg);
+}
+
+.fb-bank > div {
+  display: grid;
+  gap: 3px;
+  min-width: 200px;
+  flex: 1;
+}
+
+.fb-bank strong {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.fb-bank span {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
 }
 
 .meta-list {

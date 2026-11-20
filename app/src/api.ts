@@ -166,8 +166,22 @@ export const api = {
     }>('/ai/parse-resume-image', body),
 
   interviews: () => request<{ interviews: InterviewListItem[] }>('/interviews'),
+  commonQuestions: () =>
+    request<{
+      source: string;
+      total: number;
+      directions: { key: string; label: string; desc: string; count: number }[];
+      questions: {
+        id: string;
+        direction: string;
+        kind: 'technical' | 'project' | 'behavioral';
+        question: string;
+        focus: string;
+      }[];
+    }>('/common-questions'),
   createInterview: (body: {
-    mode: 'resume' | 'bank';
+    mode: 'resume' | 'bank' | 'common' | 'mixed';
+    direction?: string;
     resumeId?: number | null;
     jobId?: number | null;
     bankIds?: number[];
@@ -218,8 +232,13 @@ export const api = {
       totals: { total: number; weak: number; asks: number };
     }>(`/bank${qs ? `?${qs}` : ''}`);
   },
-  createBankItem: (body: { question: string; category?: string; jobId?: number | null; weak?: boolean }) =>
-    post<{ item: BankItem }>('/bank', body),
+  createBankItem: (body: {
+    question: string;
+    category?: string;
+    jobId?: number | null;
+    weak?: boolean;
+    source?: string;
+  }) => post<{ item: BankItem }>('/bank', body),
   updateBankItem: (id: number, body: { weak?: boolean; category?: string; question?: string }) =>
     patch<{ item: BankItem }>(`/bank/${id}`, body),
   deleteBankItem: (id: number) => del<{ ok: boolean }>(`/bank/${id}`),

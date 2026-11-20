@@ -17,6 +17,14 @@ import {
   PageHeader,
 } from '../components/ui';
 
+const FALLBACK_DIRECTIONS = [
+  { key: 'backend', label: '后端开发', desc: '', count: 12 },
+  { key: 'frontend', label: '前端开发', desc: '', count: 12 },
+  { key: 'data', label: '数据分析', desc: '', count: 12 },
+  { key: 'product', label: '产品经理', desc: '', count: 12 },
+  { key: 'operations', label: '运营', desc: '', count: 12 },
+];
+
 export function Interviews() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -28,7 +36,9 @@ export function Interviews() {
 
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
-  const [mode, setMode] = useState<'resume' | 'bank'>('resume');
+  const [mode, setMode] = useState<'resume' | 'bank' | 'common' | 'mixed'>('resume');
+  const [direction, setDirection] = useState('backend');
+  const [common, setCommon] = useState<Awaited<ReturnType<typeof api.commonQuestions>> | null>(null);
   const [bankItems, setBankItems] = useState<BankItem[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [starting, setStarting] = useState(false);
@@ -64,6 +74,10 @@ export function Interviews() {
   }, [jobs, activeJob, jobId]);
 
   useEffect(() => {
+    api.commonQuestions().then(setCommon).catch(() => setCommon(null));
+  }, []);
+
+  useEffect(() => {
     if (mode !== 'bank') return;
     api
       .bank()
@@ -75,12 +89,14 @@ export function Interviews() {
   }, [mode]);
 
   const start = async () => {
-    if (mode === 'resume' && !resumeId) return toast('请先选择一份简历', 'err');
+    if ((mode === 'resume' || mode === 'mixed') && !resumeId) return toast('请先选择一份简历', 'err');
     if (mode === 'bank' && selected.length === 0) return toast('请至少勾选 1 道题', 'err');
+    if ((mode === 'common' || mode === 'mixed') && !direction) return toast('请选择一个常见题方向', 'err');
     setStarting(true);
     try {
       const session = await api.createInterview({
         mode,
+        direction: mode === 'common' || mode === 'mixed' ? direction : undefined,
         resumeId,
         jobId,
         bankIds: mode === 'bank' ? selected : undefined,
@@ -106,13 +122,17 @@ export function Interviews() {
   };
 
   const canResume = resumeId && resumes.find((r) => r.id === resumeId)?.content.trim();
+  const dirs = common?.directions ?? FALLBACK_DIRECTIONS;
+  const dirLabel = dirs.find((d) => d.key === direction)?.label ?? '后端开发';
+  const samples = common?.questions.filter((q) => q.direction === direction).slice(0, 3) ?? [];
+  const commonSource = common?.source ?? '社区常见题型整理 / 通用高频题';
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="模块 2 · 模拟面试"
         title="开一场针对你简历的面试"
-        desc="问题从你的项目经历和目标岗位里长出来，不是通用题库。四轮推进，追问最多两层，答完逐题给三维反馈。"
+        desc="可以只用简历题，也可以混入按岗位方向整理的常见题。四轮推进，追问最多两层，答完逐题给三维反馈。"
       />
 
       <div className="interview-top">
@@ -140,14 +160,55 @@ export function Interviews() {
             </Field>
           </div>
 
-          <div className="seg">
+          <div className="seg seg-wrap">
             <button className={mode === 'resume' ? 'on' : ''} onClick={() => setMode('resume')}>
-              按简历出题
+              只用简历题
+            </button>
+            <button className={mode === 'mixed' ? 'on' : ''} onClick={() => setMode('mixed')}>
+              简历 + 常见题
+            </button>
+            <button className={mode === 'common' ? 'on' : ''} onClick={() => setMode('common')}>
+              只用常见题
             </button>
             <button className={mode === 'bank' ? 'on' : ''} onClick={() => setMode('bank')}>
               从题库再练
             </button>
           </div>
+
+          {(mode === 'common' || mode === 'mixed') && (
+            <div className="common-panel">
+              <div className="common-panel-head">
+                <span className="common-panel-title">常见面试题 · 按岗位方向</span>
+                <span className="common-panel-count">
+                  {commonSource} · 共 {common?.total ?? 60} 题
+                </span>
+              </div>
+              <p className="common-panel-note">
+                来源性质：社区常见题型整理 / 通用高频题，由本项目人工整理；不是任何公司的官方真题，也不含「公司名 + 年份」的出处标签。
+              </p>
+              <Field label="岗位方向" required hint="按方向抽取技术基础、项目深挖与行为面试题">
+                <select className="input" value={direction} onChange={(e) => setDirection(e.target.value)}>
+                  {dirs.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}（{d.count} 题）
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {samples.length > 0 && (
+                <ul className="common-samples" aria-label={`${dirLabel}常见题示例`}>
+                  {samples.map((q) => (
+                    <li key={q.id}>
+                      <span className="common-kind">
+                        {q.kind === 'technical' ? '技术基础' : q.kind === 'project' ? '项目深挖' : '行为面试'}
+                      </span>
+                      <span>{q.question}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {mode === 'bank' && (
             <div className="bank-picker">
@@ -194,7 +255,12 @@ export function Interviews() {
               开始面试
             </Button>
           </div>
-          {mode === 'resume' && !canResume && <Callout tone="warn">所选简历内容为空，先去「我的简历」补全。</Callout>}
+          {(mode === 'resume' || mode === 'mixed') && !canResume && (
+            <Callout tone="warn">所选简历内容为空，先去「我的简历」补全。</Callout>
+          )}
+          {mode === 'common' && (
+            <p className="common-foot">常见题专项不需要简历，会按所选方向抽题；答完可在反馈区一键加入个人题库。</p>
+          )}
         </Card>
 
         <Card title="过去 50 场" subtitle="未完成的可以继续作答" className="history-card">
@@ -215,7 +281,13 @@ export function Interviews() {
                   </div>
                   <div className="iv-sub">
                     {formatDateTime(iv.started_at)} · {relativeTime(iv.started_at)} · 已答 {iv.answered} 题 ·{' '}
-                    {iv.mode === 'bank' ? '题库再练' : ROUND_LABEL[iv.round_key] || '面试'}
+                    {iv.mode === 'bank'
+                      ? '题库再练'
+                      : iv.mode === 'common'
+                        ? '常见题专项'
+                        : iv.mode === 'mixed'
+                          ? '简历 + 常见题'
+                          : ROUND_LABEL[iv.round_key] || '面试'}
                   </div>
                 </div>
                 <div className="iv-actions">

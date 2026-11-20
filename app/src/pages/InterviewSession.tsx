@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import type { Session, Turn } from '../types';
-import { elapsed, formatDateTime } from '../lib/format';
+import { ROUND_LABEL, elapsed, formatDateTime } from '../lib/format';
 import { useSpeech } from '../lib/speech';
 import { useTts } from '../lib/tts';
 import {
@@ -28,6 +28,8 @@ export function InterviewSession() {
   const [submitting, setSubmitting] = useState(false);
   const [allDone, setAllDone] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [bankedTurns, setBankedTurns] = useState<number[]>([]);
+  const [bankAdding, setBankAdding] = useState(false);
   const [now, setNow] = useState(Date.now());
   const bottomRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -116,6 +118,32 @@ export function InterviewSession() {
     }
   };
 
+  // 常见题答完后可一键沉淀到个人题库；重复题按题库既有规则提示，不重复入库。
+  const addToBank = async (turn: Turn) => {
+    if (!session) return;
+    setBankAdding(true);
+    try {
+      await api.createBankItem({
+        question: turn.question,
+        category: ROUND_LABEL[turn.round_key] || '专业',
+        jobId: session.interview.job_id,
+        weak: (turn.score ?? 100) < 70,
+        source: 'common',
+      });
+      setBankedTurns((prev) => (prev.includes(turn.id) ? prev : [...prev, turn.id]));
+      toast('已加入个人题库，可在「个人题库」继续复习', 'ok');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setBankedTurns((prev) => (prev.includes(turn.id) ? prev : [...prev, turn.id]));
+        toast('题库里已经有这道题了', 'ok');
+      } else {
+        toast(e instanceof ApiError ? e.message : '加入题库失败', 'err');
+      }
+    } finally {
+      setBankAdding(false);
+    }
+  };
+
   const finish = async () => {
     setFinishing(true);
     try {
@@ -179,7 +207,15 @@ export function InterviewSession() {
           </Link>
           <h1 className="exam-title">
             {session.job?.title || session.resume?.title || '模拟面试'}
-            <span className="exam-mode">{session.interview.mode === 'bank' ? '题库再练' : '按简历出题'}</span>
+            <span className="exam-mode">
+              {session.interview.mode === 'bank'
+                ? '题库再练'
+                : session.interview.mode === 'common'
+                  ? '常见题专项'
+                  : session.interview.mode === 'mixed'
+                    ? '简历 + 常见题'
+                    : '按简历出题'}
+            </span>
           </h1>
           <div className="exam-sub">
             开始于 {formatDateTime(session.interview.started_at)} · 计时{' '}
@@ -228,6 +264,7 @@ export function InterviewSession() {
                     <div className="turn-a">{t.answer}</div>
                     <div className="turn-meta">
                       <span className={`score-dot s${scoreTone(t.score)}`}>{t.score ?? '—'}</span>
+                      {t.source === 'common' && <span className="common-mark">常见题</span>}
                       <span className="muted small">
                         {t.focusLabel} · {t.depth > 0 ? `第 ${t.depth} 层追问` : '主问题'}
                       </span>
@@ -249,9 +286,15 @@ export function InterviewSession() {
                   <div className="q-label">
                     {currentRound.name}
                     {activeTurn.depth > 0 && <Chip tone="red">追问 {activeTurn.depth}/2</Chip>}
+                    {activeTurn.source === 'common' && <Chip tone="ink">常见题</Chip>}
                     {activeTurn.source === 'local' && <SourceBadge source="local" note="模型不可用，使用本地模板出题" />}
                   </div>
                   <div className="q-focus">考察点：{activeTurn.focusLabel || activeTurn.focus}</div>
+                  {activeTurn.source === 'common' && (
+                    <div className="q-source-note">
+                      题目来源：社区常见题型整理 / 通用高频题，非任何公司官方真题。
+                    </div>
+                  )}
                 </div>
               </div>
               <p className="q-text">{activeTurn.question}</p>
@@ -396,6 +439,25 @@ export function InterviewSession() {
               {pendingFollowup && (
                 <div className="fb-followup">
                   下一题是追问（{pendingFollowup.focusLabel || '追问'}）：「{pendingFollowup.question}」
+                </div>
+              )}
+              {lastAnswered?.source === 'common' && (
+                <div className="fb-bank">
+                  <div>
+                    <strong>这道常见题可以留作复习素材</strong>
+                    <span>
+                      来源：社区常见题型整理 / 通用高频题，非公司官方真题；加入后可在「个人题库」按记忆曲线重练。
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={bankedTurns.includes(lastAnswered.id) ? 'quiet' : 'ghost'}
+                    disabled={bankedTurns.includes(lastAnswered.id)}
+                    loading={bankAdding}
+                    onClick={() => void addToBank(lastAnswered)}
+                  >
+                    {bankedTurns.includes(lastAnswered.id) ? '已加入个人题库' : '加入个人题库'}
+                  </Button>
                 </div>
               )}
             </Card>

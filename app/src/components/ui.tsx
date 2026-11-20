@@ -428,6 +428,13 @@ export function SourceBadge({ source, note }: { source?: 'llm' | 'local' | strin
       </span>
     );
   }
+  if (source === 'common') {
+    return (
+      <span className="source-badge common" title={note || '社区常见题型整理 / 通用高频题，非公司官方真题'}>
+        常见题
+      </span>
+    );
+  }
   return (
     <span className="source-badge llm" title={note || '由智谱模型生成'}>
       AI 生成
