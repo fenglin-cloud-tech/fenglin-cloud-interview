@@ -102,6 +102,38 @@ export const api = {
 
   growth: () => request<GrowthStats>('/stats/growth'),
   dossier: () => request<Dossier>('/dossier'),
+  exportBackup: async () => {
+    const res = await fetch('/api/backup/export');
+    if (!res.ok) throw new ApiError(res.status, 'BACKUP_EXPORT', '导出失败，请稍后重试');
+    const text = await res.text();
+    const cd = res.headers.get('content-disposition') || '';
+    const name = cd.match(/filename="([^"]+)"/)?.[1] || 'fenglin-backup.json';
+    return { text, filename: name, bytes: new Blob([text]).size };
+  },
+  previewBackup: (backup: unknown) =>
+    post<
+      | {
+          ok: true;
+          version: number;
+          exportedAt: string;
+          counts: Record<string, number>;
+          current: Record<string, number>;
+          emptyTarget: boolean;
+          warnings: string[];
+        }
+      | { ok: false; code: string; message: string }
+    >('/backup/preview', { backup }),
+  importBackup: (backup: unknown, mode: 'merge' | 'overwrite') =>
+    post<
+      | {
+          ok: true;
+          mode: 'merge' | 'overwrite';
+          before: Record<string, number>;
+          after: Record<string, number>;
+          warnings: string[];
+        }
+      | { ok: false; code: string; message: string }
+    >('/backup/import', { backup, mode }),
   demoStatus: () => request<DemoStatus>('/demo'),
   loadDemo: () => post<DemoStatus & { loaded: boolean }>('/demo/load', {}),
   clearDemo: () => post<DemoStatus & { removed: number }>('/demo/clear', {}),

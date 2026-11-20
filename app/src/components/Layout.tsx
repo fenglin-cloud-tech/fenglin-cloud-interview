@@ -55,6 +55,7 @@ const NAV = [
     group: '其他',
     items: [
       { to: '/profile', label: '本地档案', icon: 'user' },
+      { to: '/backup', label: '数据备份', icon: 'shield' },
       { to: '/privacy', label: '隐私说明', icon: 'shield' },
     ],
   },
@@ -219,6 +220,7 @@ function pathLabel(path: string): string {
     ['/reviews', '复盘记录'],
     ['/bank', '个人题库'],
     ['/profile', '本地档案'],
+    ['/backup', '数据备份'],
     ['/privacy', '隐私说明'],
     ['/', '训练台'],
   ];
