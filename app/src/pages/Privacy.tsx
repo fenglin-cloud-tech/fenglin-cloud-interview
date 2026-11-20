@@ -23,7 +23,7 @@ export function Privacy() {
         <Card title="一句话结论">
           <p className="lead">
             你的简历、JD、面试回答都存在<strong>你自己部署的这台机器的 SQLite 文件</strong>里；只有在你点击 AI 功能时，相关文本才会发送给<strong>智谱开放平台</strong>用于生成结果。
-            我们没有账号体系，也不会上传到任何第三方服务器。
+            我们没有账号体系，也不会把数据存到任何第三方服务器；模型调用只发送当次所需的内容，返回后即用即走。
           </p>
         </Card>
 
@@ -40,6 +40,20 @@ export function Privacy() {
               <strong>模型 → 服务端 → 浏览器</strong>：模型返回 JSON，服务端按约定结构校验后才展示；解析失败会重试，失败则降级或给出错误提示。
             </li>
           </ol>
+        </Card>
+
+        <Card title="上传 PDF / 图片时">
+          <ul className="principles">
+            <li>
+              <strong>电子版 PDF</strong>：用 pdf.js 在<strong>浏览器本地</strong>抽取文字层，原文件和文字都不上传；解析结果先给你确认。
+            </li>
+            <li>
+              <strong>扫描件 / 照片</strong>：浏览器把页面渲染成图片，经本地服务端转发给<strong>智谱多模态模型（glm-4v-flash）</strong>识别。
+              图片只在内存中处理，<strong>不落盘、不写入数据库、不长期存储</strong>。
+            </li>
+            <li>解析结果先进入带原文预览的<strong>可编辑确认页</strong>，你点确认后才写入简历表，不会自动入库。</li>
+            <li>限制：单文件 ≤10MB；支持 PDF / PNG / JPG / WEBP；扫描件最多解析前 3 页。</li>
+          </ul>
         </Card>
 
         <Card title="我们不会做的事">

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db, nowIso } from '../db.js';
-import { hasApiKey } from '../env.js';
+import { env, hasApiKey } from '../env.js';
 import { chatJSON, LlmError, type LlmMeta } from '../llm.js';
 import { localJdMatch } from '../fallback.js';
 import {
@@ -9,10 +9,18 @@ import {
   iterateSchema,
   jdMatchSchema,
   polishSchema,
+  resumeImageSchema,
   suggestionSchema,
 } from '../schemas.js';
 import type { JdMatchResult } from '../schemas.js';
-import { iteratePrompt, jdMatchPrompt, polishPrompt, reviewCoachPrompt, suggestionsPrompt } from '../prompts.js';
+import {
+  iteratePrompt,
+  jdMatchPrompt,
+  polishPrompt,
+  resumeImagePrompt,
+  reviewCoachPrompt,
+  suggestionsPrompt,
+} from '../prompts.js';
 import { HttpError, ah, str } from '../util.js';
 
 export const aiRouter = Router();
@@ -196,6 +204,69 @@ aiRouter.post(
     } catch (err) {
       const e = err as LlmError;
       throw new HttpError(503, 'AI 暂时无法给出改进建议，请稍后重试', e.code || 'LLM_FAILED');
+    }
+  }),
+);
+
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/** 简历图片（扫描件/照片）结构化：图片只在内存中转发给视觉模型，不落盘。 */
+aiRouter.post(
+  '/ai/parse-resume-image',
+  ah(async (req, res) => {
+    const body = req.body ?? {};
+    const fileName = str(body.fileName, 200);
+    const raw = Array.isArray(body.images) ? body.images : [];
+    if (!raw.length) throw new HttpError(400, '没有收到图片，请重新选择文件');
+    if (raw.length > 3) throw new HttpError(400, '最多支持 3 页图片，请拆分后再试');
+
+    let total = 0;
+    const images = raw.map((item: unknown, index: number) => {
+      const img = (item ?? {}) as { mimeType?: unknown; base64?: unknown };
+      const mimeType = str(img.mimeType, 40);
+      if (!IMAGE_MIME.has(mimeType)) {
+        throw new HttpError(415, `第 ${index + 1} 张图片格式不支持，仅支持 PNG / JPG / WEBP`);
+      }
+      const base64 = String(img.base64 ?? '').replace(/\s+/g, '');
+      if (base64.length < 100) throw new HttpError(400, `第 ${index + 1} 张图片内容为空`);
+      const bytes = Buffer.from(base64, 'base64').length;
+      if (bytes > MAX_IMAGE_BYTES) throw new HttpError(413, `第 ${index + 1} 张图片超过 10MB`);
+      total += bytes;
+      return { mimeType, base64 };
+    });
+    if (total > MAX_IMAGE_BYTES) throw new HttpError(413, '图片总大小超过 10MB，请压缩或减少页数');
+
+    if (!hasApiKey()) {
+      throw new HttpError(503, '服务端未配置模型密钥，暂不能解析图片，请改用粘贴文本', 'NO_KEY');
+    }
+
+    try {
+      const { data, meta } = await chatJSON(resumeImageSchema, resumeImagePrompt(images, fileName), {
+        model: env.zhipuVisionModel,
+        tag: 'resume-image',
+        temperature: 0.2,
+        maxTokens: 1000,
+      });
+      res.json({ result: data, meta, fallback: false });
+    } catch (err) {
+      const e = err as LlmError;
+      const detail = String(e.detail ?? '').trim();
+      if (detail) {
+        // 结构化失败但拿到了模型原始输出：交给前端当底稿，用户可手工整理，不白屏。
+        res.json({
+          result: { basic: '', education: '', projects: '', skills: '', rawText: detail.slice(0, 12000) },
+          meta: { source: 'llm', model: env.zhipuVisionModel, attempts: 3, ms: 0 },
+          fallback: true,
+          note: '模型输出未能通过结构校验，已把原始识别内容作为底稿，请手工整理后保存',
+        });
+        return;
+      }
+      throw new HttpError(
+        503,
+        '图片解析暂时不可用（模型超时或网络异常），可以重试，或先手动填写',
+        e.code || 'VISION_FAILED',
+      );
     }
   }),
 );

@@ -96,3 +96,42 @@ export const polishSchema = z.object({
   notes: z.array(z.string()).catch([]),
 });
 export type PolishResult = z.infer<typeof polishSchema>;
+
+/** 视觉模型偶尔把字段写成对象/数组，这里在校验前转成可读文本；字段缺失仍然报错触发重试。 */
+function flattenText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value.map(flattenText).filter(Boolean).join('\n');
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, inner]) => {
+        const text = flattenText(inner);
+        return text ? `${key}：${text}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
+const RESUME_IMAGE_KEYS = ['basic', 'education', 'projects', 'skills', 'rawText'] as const;
+
+const resumeImageBase = z.object({
+  basic: z.string(),
+  education: z.string(),
+  projects: z.string(),
+  skills: z.string(),
+  rawText: z.string(),
+});
+
+/** 视觉模型解析简历图片的结构化结果；字段必须齐全，缺失会触发重试。 */
+export const resumeImageSchema = z.preprocess((input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const obj = input as Record<string, unknown>;
+  if (!RESUME_IMAGE_KEYS.every((key) => key in obj)) return input; // 缺字段 → zod 报错 → 重试
+  return Object.fromEntries(RESUME_IMAGE_KEYS.map((key) => [key, flattenText(obj[key])]));
+}, resumeImageBase.refine((value) => RESUME_IMAGE_KEYS.some((key) => value[key].trim()), '识别结果为空'));
+export type ResumeImageResult = z.infer<typeof resumeImageBase>;

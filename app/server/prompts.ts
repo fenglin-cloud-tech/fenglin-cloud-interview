@@ -1,4 +1,4 @@
-import type { ChatMsg } from './llm.js';
+import type { ChatMsg, VisionPart } from './llm.js';
 import { FOLLOWUP_FOCUS_LABEL, roundByKey } from './interview-plan.js';
 
 const BASE = `你是「丰麟云面」的求职教练，服务对象是中国高校正在找实习/校招的学生。
@@ -261,5 +261,37 @@ export function reviewCoachPrompt(params: { question: string; answer: string; pe
 请给出：improvement（可执行的改进点，2-3 句）、tags（2-4 个标签，如「STAR」「量化」「项目细节」）。
 输出 JSON：{ "improvement": "...", "tags": ["..."] }`,
     },
+  ];
+}
+
+/** 简历图片（扫描件/照片）结构化：固定五个字符串字段。 */
+export function resumeImagePrompt(
+  images: { mimeType: string; base64: string }[],
+  fileName: string,
+): ChatMsg[] {
+  const parts: VisionPart[] = images.map((img) => ({
+    type: 'image_url' as const,
+    image_url: { url: `data:${img.mimeType};base64,${img.base64}` },
+  }));
+  parts.push({
+    type: 'text',
+    text: `这是学生上传的简历图片（文件名：${fileName || '未命名'}，共 ${images.length} 页）。请识别并结构化，保留中文原文，不要编造图片里没有的信息。
+
+输出要求：
+1. basic：姓名、联系方式、求职意向等基本信息，用换行分隔；
+2. education：教育背景（学校、专业、学历、时间、GPA、主修课程等）；
+3. projects：项目经历（项目名、角色、做法、量化结果），保留分点换行；
+4. skills：技能与证书；
+5. rawText：你在图片中看到的全部文字（尽量按原顺序），控制在 500 字以内，用于用户对照校对。
+
+某一部分确实没有内容时，输出空字符串 ""。所有字段都必须是字符串，不要使用数组或嵌套对象。
+JSON 结构：{ "basic": "", "education": "", "projects": "", "skills": "", "rawText": "" }`,
+  });
+  return [
+    {
+      role: 'system',
+      content: `${BASE}\n你擅长把扫描件/照片里的简历准确转成结构清晰的文字，识别不清楚的内容宁可留空也不猜测。${JSON_ONLY}`,
+    },
+    { role: 'user', content: parts },
   ];
 }

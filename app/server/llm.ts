@@ -1,7 +1,11 @@
 import type { z } from 'zod';
 import { env, hasApiKey } from './env.js';
 
-export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
+export type VisionPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string | VisionPart[] };
 
 export type LlmCode = 'NO_KEY' | 'TIMEOUT' | 'HTTP' | 'PARSE' | 'SCHEMA' | 'NETWORK';
 
@@ -70,7 +74,12 @@ function tryParse(text: string): { ok: true; value: unknown } | { ok: false } {
   }
 }
 
-async function callOnce(messages: ChatMsg[], temperature: number, maxTokens: number): Promise<string> {
+async function callOnce(
+  messages: ChatMsg[],
+  temperature: number,
+  maxTokens: number,
+  model = env.zhipuModel,
+): Promise<string> {
   if (!hasApiKey()) {
     throw new LlmError('NO_KEY', '未配置 ZHIPU_API_KEY，服务端无法调用模型');
   }
@@ -84,7 +93,7 @@ async function callOnce(messages: ChatMsg[], temperature: number, maxTokens: num
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: env.zhipuModel,
+        model,
         messages,
         temperature,
         max_tokens: maxTokens,
@@ -121,17 +130,18 @@ async function callOnce(messages: ChatMsg[], temperature: number, maxTokens: num
 export async function chatJSON<S extends z.ZodTypeAny>(
   schema: S,
   messages: ChatMsg[],
-  opts: { temperature?: number; maxTokens?: number; tag?: string } = {},
+  opts: { temperature?: number; maxTokens?: number; tag?: string; model?: string } = {},
 ): Promise<{ data: z.infer<S>; meta: LlmMeta; raw: string }> {
   const started = Date.now();
   const temperature = opts.temperature ?? 0.5;
   const maxTokens = opts.maxTokens ?? 2200;
+  const model = opts.model || env.zhipuModel;
   const convo: ChatMsg[] = [...messages];
   let lastErr: Error = new LlmError('PARSE', '模型调用失败');
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
-      const raw = await callOnce(convo, temperature, maxTokens);
+      const raw = await callOnce(convo, temperature, maxTokens, model);
       let parsed: unknown;
       try {
         parsed = extractJson(raw);
@@ -142,11 +152,11 @@ export async function chatJSON<S extends z.ZodTypeAny>(
       if (!checked.success) {
         throw new LlmError('SCHEMA', '模型返回结构不符合约定', checked.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
       }
-      console.log(`[llm] ${opts.tag || 'json'} ok attempt=${attempt} ms=${Date.now() - started} model=${env.zhipuModel}`);
+      console.log(`[llm] ${opts.tag || 'json'} ok attempt=${attempt} ms=${Date.now() - started} model=${model}`);
       return {
         data: checked.data,
         raw,
-        meta: { source: 'llm', model: env.zhipuModel, attempts: attempt, ms: Date.now() - started },
+        meta: { source: 'llm', model, attempts: attempt, ms: Date.now() - started },
       };
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));

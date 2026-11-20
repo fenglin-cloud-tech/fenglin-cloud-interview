@@ -132,6 +132,13 @@ export const api = {
     post<{ result: { resume: string; notes: string[] }; meta: LlmMeta }>('/ai/polish', body),
   reviewCoach: (body: { question: string; answer: string; performance: string }) =>
     post<{ result: { improvement: string; tags: string[] }; meta: LlmMeta }>('/ai/review-coach', body),
+  parseResumeImage: (body: { fileName: string; images: { mimeType: string; base64: string }[] }) =>
+    post<{
+      result: { basic: string; education: string; projects: string; skills: string; rawText: string };
+      meta: LlmMeta;
+      fallback: boolean;
+      note?: string;
+    }>('/ai/parse-resume-image', body),
 
   interviews: () => request<{ interviews: InterviewListItem[] }>('/interviews'),
   createInterview: (body: {

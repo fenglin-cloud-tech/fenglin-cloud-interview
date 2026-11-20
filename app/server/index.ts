@@ -1,4 +1,4 @@
-import express, { type NextFunction, type Request, type Response } from 'express';
+﻿import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,7 @@ import { reviewRouter } from './routes/review.js';
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '16mb' }));
 
 app.use('/api', coreRouter);
 app.use('/api', aiRouter);

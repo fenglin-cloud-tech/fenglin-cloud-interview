@@ -247,7 +247,10 @@ export function TemplateBuild() {
                 }}
               />
               <Button onClick={() => fileRef.current?.click()}>选择 .md / .txt 文件</Button>
-              <span className="muted small">PDF / 图片解析暂未实现，请先转成文本粘贴。</span>
+              <Button variant="ghost" onClick={() => navigate('/import')}>
+                从 PDF / 图片导入
+              </Button>
+              <span className="muted small">电子版 PDF 在浏览器本地解析；扫描件由视觉模型识别后确认入库。</span>
             </div>
           </Card>
         </div>

@@ -113,6 +113,7 @@ export function Resumes() {
               }}
             />
             <Button onClick={() => fileRef.current?.click()}>导入 .md/.txt</Button>
+            <Button onClick={() => navigate('/import')}>导入 PDF / 图片</Button>
             <Button variant="ink" onClick={openCreate}>
               新建简历
             </Button>

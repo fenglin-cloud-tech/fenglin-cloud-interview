@@ -3694,6 +3694,84 @@ code {
   font-weight: 600;
 }
 
+/* ---------------- 简历文件导入（PDF / 图片） ---------------- */
+.import-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 16px;
+  border: 1.5px dashed #c7bda9;
+  border-radius: 12px;
+  background: rgba(255, 253, 246, 0.6);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.import-drop:hover,
+.import-drop:focus-visible {
+  border-color: #b23a2e;
+  background: #fffdf6;
+  outline: none;
+}
+
+.import-drop strong {
+  font-size: 16px;
+}
+
+.import-drop span {
+  color: #8a8172;
+  font-size: 12.5px;
+}
+
+.import-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.import-grid > * {
+  min-width: 0;
+}
+
+.import-preview {
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fbf7ec;
+  border: 1px solid #e3dac8;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.import-thumbs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.import-thumbs img {
+  width: 100%;
+  border: 1px solid #e3dac8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+@media (max-width: 980px) {
+  .import-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media print {
   @page {
     size: A4;

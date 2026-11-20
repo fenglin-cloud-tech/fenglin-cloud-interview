@@ -14,6 +14,7 @@ import { Reviews } from './pages/Reviews';
 import { Bank } from './pages/Bank';
 import { ProfilePage } from './pages/ProfilePage';
 import { Privacy } from './pages/Privacy';
+import { ImportResume } from './pages/ImportResume';
 import { PrintResume } from './pages/PrintResume';
 import { PrintReviews } from './pages/PrintReviews';
 import { NotFound } from './pages/NotFound';
@@ -29,6 +30,7 @@ export function App() {
             <Route index element={<Home />} />
             <Route path="templates" element={<Templates />} />
             <Route path="templates/:id" element={<TemplateBuild />} />
+            <Route path="import" element={<ImportResume />} />
             <Route path="resumes" element={<Resumes />} />
             <Route path="jobs" element={<Jobs />} />
             <Route path="optimize" element={<Optimize />} />
