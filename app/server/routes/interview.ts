@@ -6,6 +6,7 @@ import { feedbackSchema, questionSchema, reportSchema } from '../schemas.js';
 import type { FeedbackResult, ReportResult } from '../schemas.js';
 import { FOLLOWUP_FOCUS_LABEL, ROUNDS, TOTAL_BASE_QUESTIONS, roundByKey } from '../interview-plan.js';
 import { feedbackPrompt, questionPrompt, reportPrompt } from '../prompts.js';
+import { FOLLOWUP_THRESHOLD, analyzeAnswer, buildFallbackFollowup, calibrateScores } from '../scoring.js';
 import { HttpError, ah, idOf, str } from '../util.js';
 
 export const interviewRouter = Router();
@@ -288,24 +289,33 @@ interviewRouter.post(
       source = 'local';
     }
 
+    // 用 STAR 覆盖、量化数据、个人贡献、篇幅等可观察证据校准模型分，避免不同质量的回答都落在 75 附近
+    const signals = analyzeAnswer(turn.question, answer);
+    feedback.scores = calibrateScores(signals, feedback.scores);
     const score = Math.round((feedback.scores.structure + feedback.scores.content + feedback.scores.expression) / 3);
+    const answeredCount = db
+      .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL')
+      .get(id) as { n: number };
+    // 追问：最多 2 层，方向限定为项目细节 / 数据来源 / 个人贡献
+    // 只有回答偏弱（低于阈值）时才追问，避免每道题都追问；并限制总题量
+    const followable =
+      turn.round_key === 'professional' || turn.round_key === 'behavioral' || turn.round_key === 'practice';
+    const canFollow = followable && turn.depth < 2 && score < FOLLOWUP_THRESHOLD && answeredCount.n + 1 < 18;
+    if (canFollow && !feedback.followup) {
+      // 模型有时只评不追问；这里用规则补一个方向明确的追问，保证弱回答能稳定触发
+      feedback.followup = buildFallbackFollowup({
+        signals,
+        scores: feedback.scores,
+        depth: turn.depth,
+      });
+    }
+
     db.prepare(
       'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ? WHERE id = ?',
     ).run(answer, JSON.stringify(feedback), score, source, nowIso(), turnId);
 
-    // 追问：最多 2 层，方向限定为项目细节 / 数据来源 / 个人贡献
-    // 只有回答偏弱时才追问（避免每道题都追问导致一场 20 题以上），并限制总题量
     let nextTurn: TurnRow | null = null;
     let allDone = false;
-    const answeredCount = db
-      .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL')
-      .get(id) as { n: number };
-    const canFollow =
-      (turn.round_key === 'professional' || turn.round_key === 'behavioral' || turn.round_key === 'practice') &&
-      turn.depth < 2 &&
-      !!feedback.followup &&
-      (turn.depth === 0 ? score < 72 : score < 70) &&
-      answeredCount.n < 18;
     if (canFollow && feedback.followup) {
       nextTurn = insertTurn(
         id,

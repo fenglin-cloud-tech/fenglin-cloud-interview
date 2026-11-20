@@ -113,7 +113,14 @@ export const api = {
   deleteJob: (id: number) => del<{ ok: boolean }>(`/jobs/${id}`),
 
   suggestions: (body: { resumeText: string; jobTitle: string }) =>
-    post<{ result: SuggestionResult; meta: LlmMeta }>('/ai/suggestions', body),
+    post<{ jobId: string; status: 'pending' }>('/ai/suggestions', body),
+  suggestionJob: (jobId: string) =>
+    request<{
+      status: 'pending' | 'done' | 'error';
+      result?: SuggestionResult;
+      meta?: LlmMeta;
+      error?: { code: string; message: string; detail?: string };
+    }>(`/ai/suggestions/${jobId}`),
   jdMatch: (body: { resumeText: string; jd: string; resumeId?: number | null; jobId?: number | null }) =>
     post<{ result: JdMatchResult; meta: LlmMeta; savedId: number | null }>('/ai/jd-match', body),
   jdAnalyses: (resumeId?: number | null) =>

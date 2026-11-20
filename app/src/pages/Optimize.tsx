@@ -70,6 +70,7 @@ export function Optimize() {
   const [savingVersion, setSavingVersion] = useState(false);
 
   const userTouched = useRef(false);
+  const sugRunRef = useRef(0);
 
   // 上下文异步加载：等简历/岗位到齐后再补默认值；用户手动切换后不再自动覆盖
   useEffect(() => {
@@ -96,6 +97,8 @@ export function Optimize() {
 
   const switchResume = (id: number | null) => {
     userTouched.current = true;
+    sugRunRef.current += 1; // 取消正在轮询的旧简历建议，避免结果串到新简历
+    setSugLoading(false);
     setResumeId(id);
     const r = resumes.find((x) => x.id === id);
     if (r) {
@@ -131,17 +134,34 @@ export function Optimize() {
 
   const runSuggestions = async () => {
     if (resumeText.trim().length < 20) return toast('简历内容太短，至少 20 字', 'err');
+    const runId = sugRunRef.current + 1;
+    sugRunRef.current = runId;
     setSugLoading(true);
     setSugError(null);
     setSug(null);
     try {
-      const { result, meta } = await api.suggestions({ resumeText, jobTitle });
-      setSug(result);
-      setSugMeta(meta);
+      const { jobId } = await api.suggestions({ resumeText, jobTitle });
+      // 服务端已改为异步任务：这里轮询结果，避免单个请求被平台网关 30s 截断
+      for (let i = 0; i < 150; i += 1) {
+        await new Promise((r) => setTimeout(r, 1200));
+        if (sugRunRef.current !== runId) return;
+        const job = await api.suggestionJob(jobId);
+        if (sugRunRef.current !== runId) return;
+        if (job.status === 'done' && job.result) {
+          setSug(job.result);
+          setSugMeta(job.meta ?? null);
+          return;
+        }
+        if (job.status === 'error') {
+          setSugError(job.error?.message || '生成失败');
+          return;
+        }
+      }
+      setSugError('生成超时，请稍后重试');
     } catch (e) {
-      setSugError(e instanceof ApiError ? e.message : '生成失败');
+      if (sugRunRef.current === runId) setSugError(e instanceof ApiError ? e.message : '生成失败');
     } finally {
-      setSugLoading(false);
+      if (sugRunRef.current === runId) setSugLoading(false);
     }
   };
 
@@ -285,7 +305,7 @@ export function Optimize() {
             </Button>
           </div>
 
-          {sugLoading && <Loading label="正在逐板块阅读简历（约 10-30 秒）" lines={4} />}
+          {sugLoading && <Loading label="正在逐板块阅读简历（后台生成，通常 20-40 秒）" lines={4} />}
           {sugError && <ErrorState message={sugError} onRetry={() => void runSuggestions()} />}
 
           {sug && (

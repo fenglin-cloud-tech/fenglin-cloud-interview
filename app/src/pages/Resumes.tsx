@@ -88,9 +88,18 @@ export function Resumes() {
   };
 
   const importFile = async (file: File) => {
-    const text = await file.text();
-    setForm((f) => ({ ...f, title: f.title || file.name.replace(/\.[^.]+$/, ''), content: text }));
-    toast('文件已读入，确认后保存', 'ok');
+    let text = '';
+    try {
+      text = await file.text();
+    } catch {
+      return toast('文件读取失败，请换一个文件重试', 'err');
+    }
+    if (!text.trim()) return toast('文件是空的，请换一个文件', 'err');
+    // 直接打开编辑弹窗并填好内容；不能只写 form，否则用户再点「新建简历」会被 openCreate 重置掉
+    setEditing(null);
+    setForm({ title: file.name.replace(/\.[^.]+$/, ''), content: text, jobId: '' });
+    setCreating(true);
+    toast('文件已读入，确认内容后保存', 'ok');
   };
 
   return (

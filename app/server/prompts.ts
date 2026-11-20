@@ -149,20 +149,30 @@ ${params.answer}
 - content（内容，0-100）：是否有具体事实、数据、个人贡献，是否切题
 - expression（表达，0-100）：是否啰嗦、口癖多、逻辑跳跃、时间分配失控
 
+评分必须按证据落档，不同质量的回答要拉开差距，禁止默认给中间分：
+- 90-100：STAR 四要素齐全，有量化结果，个人贡献清楚，直接答到问题核心；
+- 75-89：要素基本齐全，有具体事实，但数据、个人贡献或层次缺一项；
+- 60-74：能听懂，但明显缺层次、缺数据或缺个人贡献；
+- 40-59：只有一两句结论或泛泛而谈，没有事实支撑；
+- 0-39：跑题、答非所问或几乎没有作答。
+硬性规则：
+- 回答少于 80 字，或通篇没有具体事实时，三个维度都不得高于 60；
+- 三个维度应当有差异：结构看层次，内容看事实与数据，表达看啰嗦与口癖。
+
 再给出：
 - strengths：1-2 条做得好的地方（具体到原句）
 - issues：1-3 条必须改的问题（具体到原句）
 - improvedAnswer：一段 120-220 字的改写示范，用第一人称，保留候选人原有事实，不得编造新数据（缺少数据用「待补充：xx」占位）
-- followup：如果回答里还有值得深挖且未超过追问上限的点，给 1 个追问（focus 只能是 project_detail / data_source / personal_contribution）；否则为 null
+- followup：只要任一维度低于 75，就必须给出 1 个追问（focus 只能是 project_detail / data_source / personal_contribution）；三维都不低于 75 时为 null
 
-严格按以下 JSON 输出：
+只输出一个 JSON 对象，且只包含以下字段（分数是 0-100 的整数，不要写成字符串）：
 {
-  "scores": { "structure": 78, "content": 65, "expression": 82 },
+  "scores": { "structure": 整数, "content": 整数, "expression": 整数 },
   "summary": "一句话总评",
   "strengths": ["..."],
   "issues": ["..."],
   "improvedAnswer": "...",
-  "followup": { "question": "...", "focus": "project_detail" }
+  "followup": { "question": "...", "focus": "project_detail" } 或 null
 }`,
     },
   ];

@@ -109,6 +109,11 @@ export function InterviewSession() {
   const answered = session.turns.filter((t) => t.answer !== null);
   const lastAnswered = answered.length ? answered[answered.length - 1] : null;
   const feedback = lastAnswered?.feedback ?? null;
+  // 只有后端真的把这道题的追问插成下一题时，才提示「下一题是追问」；否则模型给的 followup 只是候选
+  const pendingFollowup =
+    lastAnswered && session.pendingTurn && session.pendingTurn.depth > 0 && session.pendingTurn.parent_id === lastAnswered.id
+      ? session.pendingTurn
+      : null;
   const currentRound = session.currentRound;
   const answeredThisRound = session.turns.filter((t) => t.round_key === currentRound.key && t.depth === 0 && t.answer !== null).length;
 
@@ -294,10 +299,9 @@ export function InterviewSession() {
               ) : (
                 <Callout tone="warn">本地降级模式不生成改写示范，仅做规则评估；模型恢复后会给出示例答案。</Callout>
               )}
-              {feedback.followup && (
+              {pendingFollowup && (
                 <div className="fb-followup">
-                  下一题是追问（{feedback.followup.focus === 'project_detail' ? '项目细节' : feedback.followup.focus === 'data_source' ? '数据来源' : '个人贡献'}）：
-                  「{feedback.followup.question}」
+                  下一题是追问（{pendingFollowup.focusLabel || '追问'}）：「{pendingFollowup.question}」
                 </div>
               )}
             </Card>

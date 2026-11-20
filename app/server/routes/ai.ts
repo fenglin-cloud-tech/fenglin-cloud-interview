@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, nowIso } from '../db.js';
 import { env, hasApiKey } from '../env.js';
@@ -12,7 +13,7 @@ import {
   resumeImageSchema,
   suggestionSchema,
 } from '../schemas.js';
-import type { JdMatchResult } from '../schemas.js';
+import type { JdMatchResult, SuggestionResult } from '../schemas.js';
 import {
   iteratePrompt,
   jdMatchPrompt,
@@ -35,28 +36,75 @@ aiRouter.get('/ai/status', (_req, res) => {
   res.json({ configured: hasApiKey() });
 });
 
-/* 简历优化建议 */
+/* 简历优化建议：模型调用通常 30-45s，超过平台网关 30s 上限，改为异步任务 + 轮询 */
+interface SuggestionJob {
+  status: 'pending' | 'done' | 'error';
+  startedAt: number;
+  result?: SuggestionResult;
+  meta?: LlmMeta;
+  error?: { code: string; message: string; detail?: string };
+}
+
+const suggestionJobs = new Map<string, SuggestionJob>();
+const SUGGESTION_JOB_TTL_MS = 10 * 60 * 1000;
+
+function sweepSuggestionJobs(): void {
+  const now = Date.now();
+  for (const [id, job] of suggestionJobs) {
+    if (now - job.startedAt > SUGGESTION_JOB_TTL_MS) suggestionJobs.delete(id);
+  }
+}
+
 aiRouter.post(
   '/ai/suggestions',
   ah(async (req, res) => {
     const resumeText = requireText(req.body?.resumeText, '简历内容');
     const jobTitle = str(req.body?.jobTitle, 120).trim();
-    try {
-      const { data, meta } = await chatJSON(suggestionSchema, suggestionsPrompt(resumeText, jobTitle), {
-        tag: 'suggestions',
-        temperature: 0.4,
-        maxTokens: 2600,
-      });
-      res.json({ result: data, meta });
-    } catch (err) {
-      const e = err as LlmError;
-      throw new HttpError(
-        503,
-        e.code === 'NO_KEY' ? '服务端未配置智谱 API Key，暂时无法生成建议' : 'AI 暂时无法给出建议，请稍后重试',
-        e.code || 'LLM_FAILED',
-        e.detail,
-      );
+    sweepSuggestionJobs();
+    const jobId = randomUUID();
+    const job: SuggestionJob = { status: 'pending', startedAt: Date.now() };
+    suggestionJobs.set(jobId, job);
+
+    // 先回 202，让每个 HTTP 请求都远低于网关 30s 上限；模型在后台继续跑
+    res.status(202).json({ jobId, status: 'pending' });
+
+    void (async () => {
+      try {
+        const { data, meta } = await chatJSON(suggestionSchema, suggestionsPrompt(resumeText, jobTitle), {
+          tag: 'suggestions',
+          temperature: 0.4,
+          maxTokens: 2600,
+        });
+        job.result = data;
+        job.meta = meta;
+        job.status = 'done';
+      } catch (err) {
+        const e = err as LlmError;
+        job.status = 'error';
+        job.error = {
+          code: e.code || 'LLM_FAILED',
+          message: e.code === 'NO_KEY' ? '服务端未配置智谱 API Key，暂时无法生成建议' : 'AI 暂时无法给出建议，请稍后重试',
+          detail: e.detail,
+        };
+      }
+    })();
+  }),
+);
+
+aiRouter.get(
+  '/ai/suggestions/:jobId',
+  ah(async (req, res) => {
+    const job = suggestionJobs.get(String(req.params.jobId));
+    if (!job) throw new HttpError(404, '建议任务不存在或已过期，请重新生成');
+    if (job.status === 'pending') {
+      res.json({ status: 'pending' });
+      return;
     }
+    if (job.status === 'error') {
+      res.json({ status: 'error', error: job.error });
+      return;
+    }
+    res.json({ status: 'done', result: job.result, meta: job.meta });
   }),
 );
 
