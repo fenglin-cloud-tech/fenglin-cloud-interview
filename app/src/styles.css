@@ -23,18 +23,24 @@
   --muted: #556c75;
   --muted-2: #7a8f97;
 
+  /* 提示块：全站提示/说明类底色统一取此目标色（#E9EFF6，取自参考图提示条） */
+  --note-bg: #e9eff6;
+  --note-line: #c1d2d6;
+  --note-ink: #31464f;
+
   /* 强调：云青 + 灰蓝链接 */
   --cyan: #2a6e7c;
   --cyan-ink: #25616e;
   --cyan-soft: #e6f0f2;
   --blue: #2e5170;
-  --blue-soft: #e9eff6;
+  --blue-soft: var(--note-bg);
 
   /* 状态色 */
   --ok: #2f6b52;
   --ok-soft: #e6f1ea;
-  --amber: #8a6423;
-  --amber-soft: #f6efe1;
+  /* 琥珀只保留为警示文字与 3px 左边条，不再铺大面积黄底；明度压深以适配目标底色 */
+  --amber: #7a5618;
+  --amber-soft: var(--note-bg);
   --danger: #8f4a3f;
   --danger-soft: #f7ebe8;
 
@@ -42,7 +48,7 @@
   --accent-line: #bcd6dc;
   --link-line: #c9d6e5;
   --ok-line: #c5dfd2;
-  --amber-line: #e4d5bb;
+  --amber-line: var(--note-line);
   --danger-line: #e0c9c4;
   --blue-dark: #264663;
   --ok-bright: #7fb39a;
@@ -485,9 +491,9 @@ img {
 }
 
 .demo-banner {
-  background: var(--amber-soft);
-  border-bottom: 1px solid var(--amber-line);
-  color: var(--amber);
+  background: var(--note-bg);
+  border-bottom: 1px solid var(--note-line);
+  color: var(--note-ink);
   font-size: 13px;
   padding: 7px 24px;
   text-align: center;
@@ -1312,8 +1318,8 @@ select.input {
 }
 
 .callout-warn {
-  border-left-color: var(--amber);
   border-color: var(--amber-line);
+  border-left-color: var(--amber);
   background: var(--amber-soft);
   color: var(--amber);
 }
