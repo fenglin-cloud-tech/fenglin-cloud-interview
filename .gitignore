@@ -31,3 +31,11 @@ Thumbs.db
 
 # 过程性中间产物：日志、临时脚本、全量截图不入库
 2026-11-20/fenglin-mianshi/work/
+
+# 演示视频大文件：mp4 与抽帧不入库（srt 与录制说明保留）
+2026-11-20/fenglin-mianshi/outputs/video/*.mp4
+2026-11-20/fenglin-mianshi/outputs/video/frames/
+*.mp4
+*.webm
+*.wav
+*.m4a
