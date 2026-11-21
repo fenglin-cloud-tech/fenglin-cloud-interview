@@ -27,17 +27,19 @@
   - 要求部署后基于托管形态真实能力判定是否支持账号体系（结论：不支持，维持单机档案）。
 - **可核对证据**：该会话向主会话下发的任务消息带有此 `source_session_id`；主会话的部署汇报亦回传至该会话。
 
-## 待补充的第 3 个会话
+### 3. `7f077dbf56533a1e89f405dd` — 全站点击测试会话
 
-> 格式：24 位十六进制（与上面两个一致），在 TRAE 会话列表中复制。
-
-- **ID**：`________________________`
-- **建议用途**：新建一个会话专门录制演示视频或做最终验收（例如「按分镜脚本走一遍并截图」），录完把该会话 ID 填在这里。
-- **补充步骤**：
-  1. 在 TRAE 中新建会话，工作目录选 `e:\Trae\fenglin-cloud-interview\app`；
-  2. 发一条真实任务，例如「按照 outputs/演示视频分镜脚本.md 走一遍，并在每一步截图」；
-  3. 从会话详情/会话列表复制 Session ID 填入上面的空位；
-  4. 保留该会话的截图与产物，作为第 3 段实践证据。
+- **会话标题**：丰麟云面 全站点击测试
+- **时间**：2026-11-20 12:12 创建
+- **工作内容**：
+  - 真实浏览器全站逐页点击，桌面与移动端宽度都走一遍；
+  - 产出点击测试计划 `work/clicktest-plan.md`、滚动检查计划 `work/scrollcheck-plan.md`；
+  - 用 `work/runner/` 下的批次脚本执行点击与截图，截图归档到 `work/shots/clicktest/`。
+- **可核对证据**：
+  - 本地 TRAE 日志中的会话创建事件：`session_created {"chat_session_id":"7f077dbf56533a1e89f405dd", ... "mode":"code", ...}`；
+  - 同一日志的会话更新事件带标题：`{"chat_session_id":"7f077dbf56533a1e89f405dd", ..., "title":"丰麟云面 全站点击测试"}`；
+  - 该会话写入 `2026-11-20/fenglin-mianshi/work/clicktest-plan.md`（日志记录中的 `chatSessionId` 即此 ID）。
+- **去重核对**：与上面两个 ID 均不相同。
 
 ## 说明
 
@@ -45,4 +47,4 @@
 - 若比赛要求「每个 Session ID 对应一段 TRAE 实践截图」，可按下列对应关系提交：
   - 会话 1 → `work/shots/desktop-*.png`、`flow-*.png`（功能实现与全链路）
   - 会话 2 → `work/shots/debug-session5.png`（部署排查过程）与线上站点截图
-  - 会话 3 → 录制演示视频时新建，截图随视频一起提交
+  - 会话 3 → `work/clicktest-plan.md`、`work/scrollcheck-plan.md` 与 `work/shots/clicktest/` 下的批次截图（全站点击测试）
