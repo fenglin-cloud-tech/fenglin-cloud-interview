@@ -35,6 +35,9 @@ const LIMITS = {
   applications: 3000,
   applicationLinks: 10000,
   applicationStageLog: 20000,
+  jobSkills: 10000,
+  experienceCards: 2000,
+  trainingTasks: 20000,
 };
 
 type Obj = Record<string, unknown>;
@@ -56,6 +59,9 @@ interface BackupFile {
     applications: Obj[];
     applicationLinks: Obj[];
     applicationStageLog: Obj[];
+    jobSkills: Obj[];
+    experienceCards: Obj[];
+    trainingTasks: Obj[];
   };
 }
 
@@ -133,6 +139,12 @@ function parseRows(file: BackupFile) {
     title: str(r.title, 200, `jobs[${i}].title`, true),
     company: str(r.company, 200, `jobs[${i}].company`),
     jd: str(r.jd, 200_000, `jobs[${i}].jd`),
+    location: str(r.location, 200, `jobs[${i}].location`),
+    salary_range: str(r.salary_range, 100, `jobs[${i}].salary_range`),
+    deadline: nullableStr(r.deadline, 40, `jobs[${i}].deadline`),
+    priority: int(r.priority, `jobs[${i}].priority`, { min: 0, max: 2, nullable: true }) ?? 0,
+    source_url: str(r.source_url, 2000, `jobs[${i}].source_url`),
+    status: str(r.status, 20, `jobs[${i}].status`) || 'open',
     created_at: isoish(r.created_at, `jobs[${i}].created_at`, true),
     updated_at: isoish(r.updated_at, `jobs[${i}].updated_at`, true),
   }));
@@ -185,6 +197,10 @@ function parseRows(file: BackupFile) {
     source: str(r.source, 20, `turns[${i}].source`) || 'llm',
     created_at: isoish(r.created_at, `turns[${i}].created_at`, true),
     answered_at: nullableStr(r.answered_at, 40, `turns[${i}].answered_at`),
+    answer_started_at: nullableStr(r.answer_started_at, 40, `turns[${i}].answer_started_at`),
+    duration_sec: int(r.duration_sec, `turns[${i}].duration_sec`, { min: 0, max: 86_400, nullable: true }),
+    tags_json: jsonStr(r.tags_json, 20_000, `turns[${i}].tags_json`),
+    skipped: (int(r.skipped, `turns[${i}].skipped`, { min: 0, max: 1, nullable: true }) ?? 0) as 0 | 1,
   }));
   const reviews = arr(d, 'reviews').map((r, i) => ({
     id: int(r.id, `reviews[${i}].id`, { min: 1 })!,
@@ -209,6 +225,7 @@ function parseRows(file: BackupFile) {
     ask_count: int(r.ask_count, `bankItems[${i}].ask_count`, { min: 0, nullable: true }) ?? 0,
     last_score: int(r.last_score, `bankItems[${i}].last_score`, { min: 0, max: 100, nullable: true }),
     last_practiced_at: nullableStr(r.last_practiced_at, 40, `bankItems[${i}].last_practiced_at`),
+    card_json: jsonStr(r.card_json, 200_000, `bankItems[${i}].card_json`),
     created_at: isoish(r.created_at, `bankItems[${i}].created_at`, true),
   }));
   const reviewTasks = arr(d, 'reviewTasks').map((r, i) => ({
@@ -269,6 +286,43 @@ function parseRows(file: BackupFile) {
     };
   });
 
+  const jobSkills = arr(d, 'jobSkills').map((r, i) => ({
+    id: int(r.id, `jobSkills[${i}].id`, { min: 1 })!,
+    job_id: int(r.job_id, `jobSkills[${i}].job_id`, { min: 1 })!,
+    skill: str(r.skill, 200, `jobSkills[${i}].skill`, true),
+    weight: int(r.weight, `jobSkills[${i}].weight`, { min: 0, max: 10, nullable: true }) ?? 1,
+    source: str(r.source, 20, `jobSkills[${i}].source`) || 'llm',
+    created_at: isoish(r.created_at, `jobSkills[${i}].created_at`, true),
+  }));
+  const experienceCards = arr(d, 'experienceCards').map((r, i) => ({
+    id: int(r.id, `experienceCards[${i}].id`, { min: 1 })!,
+    title: str(r.title, 200, `experienceCards[${i}].title`, true),
+    role: str(r.role, 200, `experienceCards[${i}].role`),
+    situation: str(r.situation, 20_000, `experienceCards[${i}].situation`),
+    task: str(r.task, 20_000, `experienceCards[${i}].task`),
+    action: str(r.action, 20_000, `experienceCards[${i}].action`),
+    result: str(r.result, 20_000, `experienceCards[${i}].result`),
+    metrics: str(r.metrics, 5000, `experienceCards[${i}].metrics`),
+    tags: str(r.tags, 500, `experienceCards[${i}].tags`),
+    job_id: int(r.job_id, `experienceCards[${i}].job_id`, { min: 1, nullable: true }),
+    created_at: isoish(r.created_at, `experienceCards[${i}].created_at`, true),
+    updated_at: isoish(r.updated_at, `experienceCards[${i}].updated_at`, true),
+  }));
+  const trainingTasks = arr(d, 'trainingTasks').map((r, i) => {
+    const planDate = str(r.plan_date, 10, `trainingTasks[${i}].plan_date`, true);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(planDate)) throw bad(`trainingTasks[${i}].plan_date 日期格式不正确`);
+    return {
+      id: int(r.id, `trainingTasks[${i}].id`, { min: 1 })!,
+      plan_date: planDate,
+      kind: str(r.kind, 40, `trainingTasks[${i}].kind`, true),
+      ref_id: int(r.ref_id, `trainingTasks[${i}].ref_id`, { min: 1, nullable: true }),
+      title: str(r.title, 300, `trainingTasks[${i}].title`, true),
+      status: str(r.status, 20, `trainingTasks[${i}].status`) || 'todo',
+      done_at: nullableStr(r.done_at, 40, `trainingTasks[${i}].done_at`),
+      created_at: isoish(r.created_at, `trainingTasks[${i}].created_at`, true),
+    };
+  });
+
   checkDupIds(jobs, 'jobs');
   checkDupIds(resumes, 'resumes');
   checkDupIds(jdAnalyses, 'jdAnalyses');
@@ -277,6 +331,9 @@ function parseRows(file: BackupFile) {
   checkDupIds(reviews, 'reviews');
   checkDupIds(bankItems, 'bankItems');
   checkDupIds(applications, 'applications');
+  checkDupIds(jobSkills, 'jobSkills');
+  checkDupIds(experienceCards, 'experienceCards');
+  checkDupIds(trainingTasks, 'trainingTasks');
 
   const warnings: string[] = [];
   const jobIds = new Set(jobs.map((j) => j.id));
@@ -333,6 +390,12 @@ function parseRows(file: BackupFile) {
   });
   if (validLinks.length < applicationLinks.length) warnings.push('有投递关联指向不存在的记录或重复，已跳过');
 
+  const validJobSkills = jobSkills.filter((s) => jobIds.has(s.job_id));
+  if (validJobSkills.length < jobSkills.length) warnings.push('有技能标签指向备份中不存在的岗位，已跳过');
+  for (const c of experienceCards) {
+    if (c.job_id && !jobIds.has(c.job_id)) c.job_id = null;
+  }
+
   return {
     jobs,
     resumes,
@@ -345,6 +408,9 @@ function parseRows(file: BackupFile) {
     applications,
     applicationLinks: validLinks,
     applicationStageLog: validStageLog,
+    jobSkills: validJobSkills,
+    experienceCards,
+    trainingTasks,
     warnings,
   };
 }
@@ -390,6 +456,9 @@ function validate(raw: unknown): Validated {
       applications: parsed.applications,
       applicationLinks: parsed.applicationLinks,
       applicationStageLog: parsed.applicationStageLog,
+      jobSkills: parsed.jobSkills,
+      experienceCards: parsed.experienceCards,
+      trainingTasks: parsed.trainingTasks,
     } },
     warnings: parsed.warnings,
   };
@@ -409,6 +478,9 @@ function countsOf(parsed: ReturnType<typeof parseRows>) {
     applications: parsed.applications.length,
     applicationLinks: parsed.applicationLinks.length,
     applicationStageLog: parsed.applicationStageLog.length,
+    jobSkills: parsed.jobSkills.length,
+    experienceCards: parsed.experienceCards.length,
+    trainingTasks: parsed.trainingTasks.length,
   };
 }
 
@@ -428,6 +500,9 @@ function currentCounts() {
     applications: one('application'),
     applicationLinks: one('application_link'),
     applicationStageLog: one('application_stage_log'),
+    jobSkills: one('job_skill'),
+    experienceCards: one('experience_card'),
+    trainingTasks: one('training_task'),
   };
 }
 
@@ -442,6 +517,9 @@ function isEmptyTarget(): boolean {
     c.bankItems === 0 &&
     c.reviewTasks === 0 &&
     c.applications === 0 &&
+    c.jobSkills === 0 &&
+    c.experienceCards === 0 &&
+    c.trainingTasks === 0 &&
     !db.prepare('SELECT nickname FROM profile WHERE id = 1').get()?.nickname
   );
 }
@@ -466,6 +544,9 @@ function clearAll(): void {
     'interview',
     'bank_item',
     'resume',
+    'job_skill',
+    'experience_card',
+    'training_task',
     'job',
   ]) {
     db.prepare(`DELETE FROM ${t}`).run();
@@ -483,8 +564,21 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
   clearAll();
   for (const j of parsed.jobs) {
     db.prepare(
-      'INSERT INTO job (id, title, company, jd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(j.id, j.title, j.company, j.jd, j.created_at, j.updated_at);
+      'INSERT INTO job (id, title, company, jd, location, salary_range, deadline, priority, source_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      j.id,
+      j.title,
+      j.company,
+      j.jd,
+      j.location,
+      j.salary_range,
+      j.deadline,
+      j.priority,
+      j.source_url,
+      j.status,
+      j.created_at,
+      j.updated_at,
+    );
   }
   for (const r of parsed.resumes) {
     db.prepare(
@@ -520,7 +614,7 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
   }
   for (const t of parsed.turns) {
     db.prepare(
-      'INSERT INTO interview_turn (id, interview_id, round_key, seq, depth, parent_id, question, focus, answer, feedback_json, score, source, created_at, answered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO interview_turn (id, interview_id, round_key, seq, depth, parent_id, question, focus, answer, feedback_json, score, source, created_at, answered_at, answer_started_at, duration_sec, tags_json, skipped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(
       t.id,
       t.interview_id,
@@ -536,11 +630,15 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
       t.source,
       t.created_at,
       t.answered_at,
+      t.answer_started_at,
+      t.duration_sec,
+      t.tags_json,
+      t.skipped,
     );
   }
   for (const b of parsed.bankItems) {
     db.prepare(
-      'INSERT INTO bank_item (id, question, category, job_id, source, weak, ask_count, last_score, last_practiced_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO bank_item (id, question, category, job_id, source, weak, ask_count, last_score, last_practiced_at, card_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(
       b.id,
       b.question,
@@ -551,6 +649,7 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
       b.ask_count,
       b.last_score,
       b.last_practiced_at,
+      b.card_json,
       b.created_at,
     );
   }
@@ -603,6 +702,34 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
       'INSERT OR IGNORE INTO review_task (kind, ref_id, stage, due_at, last_reviewed_at, reps, lapses, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(t.kind, t.ref_id, t.stage, t.due_at, t.last_reviewed_at, t.reps, t.lapses, t.updated_at);
   }
+  for (const s of parsed.jobSkills) {
+    db.prepare(
+      'INSERT INTO job_skill (id, job_id, skill, weight, source, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(s.id, s.job_id, s.skill, s.weight, s.source, s.created_at);
+  }
+  for (const c of parsed.experienceCards) {
+    db.prepare(
+      'INSERT INTO experience_card (id, title, role, situation, task, action, result, metrics, tags, job_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      c.id,
+      c.title,
+      c.role,
+      c.situation,
+      c.task,
+      c.action,
+      c.result,
+      c.metrics,
+      c.tags,
+      c.job_id,
+      c.created_at,
+      c.updated_at,
+    );
+  }
+  for (const t of parsed.trainingTasks) {
+    db.prepare(
+      'INSERT INTO training_task (id, plan_date, kind, ref_id, title, status, done_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(t.id, t.plan_date, t.kind, t.ref_id, t.title, t.status, t.done_at, t.created_at);
+  }
   if (profile) {
     db.prepare('UPDATE profile SET nickname = ?, school = ?, major = ?, grade = ?, updated_at = ? WHERE id = 1').run(
       profile.nickname || '',
@@ -624,8 +751,22 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
 
   for (const j of parsed.jobs) {
     const r = db
-      .prepare('INSERT INTO job (title, company, jd, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-      .run(j.title, j.company, j.jd, j.created_at, j.updated_at);
+      .prepare(
+        'INSERT INTO job (title, company, jd, location, salary_range, deadline, priority, source_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        j.title,
+        j.company,
+        j.jd,
+        j.location,
+        j.salary_range,
+        j.deadline,
+        j.priority,
+        j.source_url,
+        j.status,
+        j.created_at,
+        j.updated_at,
+      );
     jobMap.set(j.id, r.lastInsertRowid);
   }
   for (const r of parsed.resumes) {
@@ -705,7 +846,7 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
     if (!iid) continue;
     const r = db
       .prepare(
-        'INSERT INTO interview_turn (interview_id, round_key, seq, depth, parent_id, question, focus, answer, feedback_json, score, source, created_at, answered_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO interview_turn (interview_id, round_key, seq, depth, parent_id, question, focus, answer, feedback_json, score, source, created_at, answered_at, answer_started_at, duration_sec, tags_json, skipped) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         iid,
@@ -720,6 +861,10 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
         t.source,
         t.created_at,
         t.answered_at,
+        t.answer_started_at,
+        t.duration_sec,
+        t.tags_json,
+        t.skipped,
       );
     turnMap.set(t.id, r.lastInsertRowid);
   }
@@ -745,7 +890,7 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
     }
     const r = db
       .prepare(
-        'INSERT INTO bank_item (question, category, job_id, source, weak, ask_count, last_score, last_practiced_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO bank_item (question, category, job_id, source, weak, ask_count, last_score, last_practiced_at, card_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         b.question,
@@ -756,6 +901,7 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
         b.ask_count,
         b.last_score,
         b.last_practiced_at,
+        b.card_json,
         b.created_at,
       );
     bankMap.set(b.id, r.lastInsertRowid);
@@ -795,6 +941,35 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
     db.prepare(
       'INSERT OR IGNORE INTO review_task (kind, ref_id, stage, due_at, last_reviewed_at, reps, lapses, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(t.kind, mapped, t.stage, t.due_at, t.last_reviewed_at, t.reps, t.lapses, t.updated_at);
+  }
+  for (const s of parsed.jobSkills) {
+    const jobId = jobMap.get(s.job_id);
+    if (!jobId) continue;
+    db.prepare(
+      'INSERT INTO job_skill (job_id, skill, weight, source, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(jobId, s.skill, s.weight, s.source, s.created_at);
+  }
+  for (const c of parsed.experienceCards) {
+    db.prepare(
+      'INSERT INTO experience_card (title, role, situation, task, action, result, metrics, tags, job_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      c.title,
+      c.role,
+      c.situation,
+      c.task,
+      c.action,
+      c.result,
+      c.metrics,
+      c.tags,
+      c.job_id ? jobMap.get(c.job_id) ?? null : null,
+      c.created_at,
+      c.updated_at,
+    );
+  }
+  for (const t of parsed.trainingTasks) {
+    db.prepare(
+      'INSERT INTO training_task (plan_date, kind, ref_id, title, status, done_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(t.plan_date, t.kind, t.ref_id, t.title, t.status, t.done_at, t.created_at);
   }
 
   const p = db.prepare('SELECT nickname, school, major, grade FROM profile WHERE id = 1').get() as
@@ -848,6 +1023,9 @@ BACKUP_ROUTER.get(
         applicationStageLog: db
           .prepare('SELECT * FROM application_stage_log ORDER BY application_id, changed_at, id')
           .all() as Obj[],
+        jobSkills: db.prepare('SELECT * FROM job_skill ORDER BY id').all() as Obj[],
+        experienceCards: db.prepare('SELECT * FROM experience_card ORDER BY id').all() as Obj[],
+        trainingTasks: db.prepare('SELECT * FROM training_task ORDER BY id').all() as Obj[],
       },
     };
     const filename = `fenglin-backup-${new Date().toISOString().slice(0, 10)}.json`;

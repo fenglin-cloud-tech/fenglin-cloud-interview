@@ -48,6 +48,49 @@ export const questionSchema = z.object({
 });
 export type QuestionResult = z.infer<typeof questionSchema>;
 
+export const skillSchema = z.object({
+  skills: z
+    .array(
+      z.object({
+        skill: z.string().min(1),
+        weight: z.number().min(1).max(3).catch(1),
+      }),
+    )
+    .catch([]),
+});
+export type SkillResult = z.infer<typeof skillSchema>;
+
+export const pitchSchema = z.object({
+  versions: z
+    .array(
+      z.object({
+        duration: z.number().min(30).max(180),
+        text: z.string().min(20),
+        outline: z.array(z.string()).catch([]),
+        tips: z.array(z.string()).catch([]),
+      }),
+    )
+    .catch([]),
+});
+export type PitchResult = z.infer<typeof pitchSchema>;
+
+export const bankCardSchema = z.object({
+  summary: z.string().catch(''),
+  keyPoints: z.array(z.string()).catch([]),
+  framework: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        detail: z.string().catch(''),
+      }),
+    )
+    .catch([]),
+  sample: z.string().catch(''),
+  pitfalls: z.array(z.string()).catch([]),
+  followups: z.array(z.string()).catch([]),
+});
+export type BankCardResult = z.infer<typeof bankCardSchema>;
+
 export const feedbackSchema = z.object({
   scores: z.object({
     structure: z.number().min(0).max(100),

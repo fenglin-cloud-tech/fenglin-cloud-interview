@@ -41,6 +41,7 @@ const NAV = [
     group: '简历与岗位',
     items: [
       { to: '/resumes', label: '我的简历', icon: 'doc' },
+      { to: '/experiences', label: '经历素材', icon: 'notebook' },
       { to: '/jobs', label: '目标岗位', icon: 'target' },
       { to: '/applications', label: '投递追踪', icon: 'send' },
       { to: '/optimize', label: '简历优化', icon: 'wand' },
@@ -50,6 +51,7 @@ const NAV = [
     group: '面试',
     items: [
       { to: '/interviews', label: '模拟面试', icon: 'mic' },
+      { to: '/pitch', label: '自我介绍', icon: 'wand' },
       { to: '/reviews', label: '复盘记录', icon: 'notebook' },
       { to: '/bank', label: '个人题库', icon: 'library' },
     ],
@@ -295,9 +297,12 @@ function pathLabel(path: string): string {
     ['/templates', '模板库'],
     ['/import', '简历导入'],
     ['/resumes', '我的简历'],
+    ['/experiences', '经历素材'],
+    ['/jobs/', '目标岗位 / 技能图谱'],
     ['/jobs', '目标岗位'],
     ['/optimize', '简历优化'],
     ['/interviews', '模拟面试'],
+    ['/pitch', '自我介绍'],
     ['/reviews', '复盘记录'],
     ['/bank', '个人题库'],
     ['/profile', '本地档案'],

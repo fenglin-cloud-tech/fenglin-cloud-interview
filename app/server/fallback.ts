@@ -57,6 +57,17 @@ function extractRequirements(jd: string): string[] {
   return found.slice(0, 10);
 }
 
+export function localSkillTags(jd: string): { skill: string; weight: number }[] {
+  const lower = jd.toLowerCase();
+  const scored: { skill: string; weight: number; count: number }[] = [];
+  for (const term of DICT) {
+    const count = lower.split(term.toLowerCase()).length - 1;
+    if (count > 0) scored.push({ skill: term, weight: Math.min(3, 1 + count - 1), count });
+  }
+  scored.sort((a, b) => b.count - a.count);
+  return scored.slice(0, 20).map((s) => ({ skill: s.skill, weight: Math.max(1, s.weight) }));
+}
+
 export function localJdMatch(resumeText: string, jd: string): JdMatchResult {
   const reqs = extractRequirements(jd);
   const resumeNorm = norm(resumeText);

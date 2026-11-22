@@ -26,10 +26,107 @@ export interface Job {
   title: string;
   company: string;
   jd: string;
+  location: string;
+  salary_range: string;
+  deadline: string | null;
+  priority: number;
+  source_url: string;
+  status: string;
   created_at: string;
   updated_at: string;
   resume_count?: number;
   interview_count?: number;
+}
+
+export interface JobSkill {
+  id: number;
+  job_id: number;
+  skill: string;
+  weight: number;
+  source: 'llm' | 'local' | string;
+  created_at: string;
+}
+
+export interface JobSkillCoverageItem {
+  skill: string;
+  weight: number;
+  status: CoverageStatus;
+  evidence: string;
+}
+
+export interface JobSkillsData {
+  job: { id: number; title: string; company: string; jd: string };
+  skills: JobSkill[];
+  resume: { id: number; title: string; matchedByJob: boolean } | null;
+  percent: number;
+  items: JobSkillCoverageItem[];
+  updatedAt: string | null;
+  meta?: { source: 'llm' | 'local'; note?: string };
+}
+
+export interface ResumeDiffLine {
+  type: 'same' | 'add' | 'del';
+  text: string;
+}
+
+export interface ResumeDiff {
+  a: { id: number; title: string; updated_at: string };
+  b: { id: number; title: string; updated_at: string };
+  lines: ResumeDiffLine[];
+  added: number;
+  removed: number;
+}
+
+export interface BankCard {
+  summary: string;
+  keyPoints: string[];
+  framework: { title: string; detail: string }[];
+  sample: string;
+  pitfalls: string[];
+  followups: string[];
+  generatedAt: string;
+  meta: LlmMeta;
+}
+
+export interface PitchVersion {
+  duration: number;
+  text: string;
+  outline: string[];
+  tips: string[];
+}
+
+export interface PitchResultData {
+  versions: PitchVersion[];
+  meta: LlmMeta;
+  resume: { id: number; title: string };
+  job: { id: number; title: string; company: string } | null;
+  fallbackCode?: string;
+}
+
+export interface TrainingTask {
+  id: number;
+  plan_date: string;
+  kind: string;
+  ref_id: number | null;
+  title: string;
+  status: 'todo' | 'doing' | 'done' | 'skipped' | string;
+  done_at: string | null;
+  created_at: string;
+}
+
+export interface ExperienceCard {  id: number;
+  title: string;
+  role: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  metrics: string;
+  tags: string;
+  job_id: number | null;
+  job_title?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TemplateSection {
@@ -115,6 +212,10 @@ export interface Turn {
   source: 'llm' | 'local' | string;
   created_at: string;
   answered_at: string | null;
+  answer_started_at: string | null;
+  duration_sec: number | null;
+  tags: string[];
+  skipped: number;
 }
 
 export interface PlanRound {

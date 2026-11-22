@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, type AnswerJobResult, type FinishJobResult } from '../api';
+import { api, ApiError, type AnswerJobResult, type FinishJobResult, type SkipJobResult } from '../api';
 import type { Session, Turn } from '../types';
 import { ROUND_LABEL, elapsed, formatDateTime } from '../lib/format';
 import { useSpeech } from '../lib/speech';
@@ -55,6 +55,8 @@ export function InterviewSession() {
   const [submitting, setSubmitting] = useState(false);
   const [submitStart, setSubmitStart] = useState(0);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState(false);
+  const [skipStart, setSkipStart] = useState(0);
   const [allDone, setAllDone] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finishStart, setFinishStart] = useState(0);
@@ -208,6 +210,38 @@ export function InterviewSession() {
     }
   };
 
+  // UX-07：换一题。服务端限制每场最多 2 次，这里只负责发起与轮询。
+  const skipTurn = async () => {
+    if (!activeTurn || skipping || submitting) return;
+    const skippedTurnId = activeTurn.id;
+    tts.stop();
+    setSkipping(true);
+    setSkipStart(Date.now());
+    setSubmitError(null);
+    try {
+      const started = await api.skipTurn(ivId, skippedTurnId);
+      const res = await pollInterviewJob<SkipJobResult>(ivId, started.jobId);
+      setSession(res.session);
+      setAllDone(res.allDone);
+      setAnswer('');
+      setDraftRestored(false);
+      try {
+        window.localStorage.removeItem(draftKey(ivId, skippedTurnId));
+      } catch {
+        /* ignore */
+      }
+      toast(
+        res.allDone ? '已跳过，所有轮次已完成' : `已跳过本题，本场还可跳过 ${res.remainingSkips} 题`,
+        'ok',
+      );
+    } catch (e) {
+      setSubmitError(e instanceof ApiError ? e.message : '换题失败');
+      toast(e instanceof ApiError ? e.message : '换题失败', 'err');
+    } finally {
+      setSkipping(false);
+    }
+  };
+
   // 常见题答完后可一键沉淀到个人题库；重复题按题库既有规则提示，不重复入库。
   const addToBank = async (turn: Turn) => {
     if (!session) return;
@@ -255,7 +289,7 @@ export function InterviewSession() {
 
   // 限时：按真实开始时间计算剩余秒数；到点自动提交已写内容，未作答时只提示。
   useEffect(() => {
-    if (!activeTurn || submitting || !timer || timer.turnId !== activeTurn.id) return;
+    if (!activeTurn || submitting || skipping || !timer || timer.turnId !== activeTurn.id) return;
     if (left > 0) return;
     if (timeoutRef.current === activeTurn.id) return;
     timeoutRef.current = activeTurn.id;
@@ -268,7 +302,7 @@ export function InterviewSession() {
       toast('时间到：本题还没有有效作答，未自动提交', 'err');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, timer, activeTurn?.id, submitting]);
+  }, [left, timer, activeTurn?.id, submitting, skipping]);
 
   const expired = !!activeTurn && left <= 0;
 
@@ -290,7 +324,10 @@ export function InterviewSession() {
       ? session.pendingTurn
       : null;
   const currentRound = session.currentRound;
-  const answeredThisRound = session.turns.filter((t) => t.round_key === currentRound.key && t.depth === 0 && t.answer !== null).length;
+  const answeredThisRound = session.turns.filter(
+    (t) => t.round_key === currentRound.key && t.depth === 0 && (t.answer !== null || t.skipped === 1),
+  ).length;
+  const skipCount = session.turns.filter((t) => t.skipped).length;
 
   return (
     <div className="page">
@@ -314,6 +351,7 @@ export function InterviewSession() {
           <div className="exam-sub">
             开始于 {formatDateTime(session.interview.started_at)} · 计时{' '}
             <strong className="mono clock">{elapsed(session.interview.started_at, new Date(now).toISOString())}</strong>
+            {skipCount > 0 && <span className="muted small"> · 已跳过 {skipCount}/2 题</span>}
           </div>
         </div>
         <div className="exam-progress">
@@ -362,6 +400,8 @@ export function InterviewSession() {
                       <span className="muted small">
                         {t.focusLabel} · {t.depth > 0 ? `第 ${t.depth} 层追问` : '主问题'}
                       </span>
+                      {t.duration_sec != null && <span className="muted small">用时 {t.duration_sec}s</span>}
+                      {!!t.tags?.length && <span className="muted small">标签：{t.tags.join('、')}</span>}
                     </div>
                     {t.feedback?.issues?.length ? (
                       <div className="turn-issue">待改：{t.feedback.issues[0]}</div>
@@ -488,7 +528,17 @@ export function InterviewSession() {
                     <span className="muted small">{answer.trim().length} 字</span>
                     {speech.interim && <span className="interim">识别中：{speech.interim}</span>}
                   </div>
-                  <Button variant="ink" onClick={() => void submit()} loading={submitting}>
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    disabled={submitting || skipping || skipCount >= 2}
+                    loading={skipping}
+                    onClick={() => void skipTurn()}
+                    title="跳过当前题，每场最多 2 次"
+                  >
+                    {skipCount >= 2 ? '本场已用完跳过次数' : `换一题（剩 ${2 - skipCount} 次）`}
+                  </Button>
+                  <Button variant="ink" onClick={() => void submit()} loading={submitting} disabled={skipping}>
                     提交并看反馈
                   </Button>
                 </div>
@@ -503,6 +553,9 @@ export function InterviewSession() {
                   <Callout tone="info">已恢复上次未提交的草稿；提交成功后会自动清除。</Callout>
                 )}
                 {speech.error && <Callout tone="warn">{speech.error}</Callout>}
+                {skipping && (
+                  <BusyProgress label="正在换一题" start={skipStart} note="会跳过当前题并生成下一题" />
+                )}
                 {submitting && (
                   <BusyProgress label="正在生成单题反馈" start={submitStart} note="模型通常需要 10-30 秒" />
                 )}

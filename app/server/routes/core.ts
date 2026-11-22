@@ -6,6 +6,7 @@ import { ensureReviewTasks } from '../review-schedule.js';
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { env, hasApiKey } from '../env.js';
 import { fetchJdFromUrl } from '../jd-fetch.js';
+import { diffLines } from '../diff.js';
 
 export const coreRouter = Router();
 
@@ -56,6 +57,23 @@ coreRouter.get('/resumes', (_req, res) => {
     )
     .all();
   res.json({ resumes: rows });
+});
+
+coreRouter.get('/resumes/:id/diff/:otherId', (req, res) => {
+  const a = resumeRow(idOf(req));
+  const otherId = Number(req.params.otherId);
+  if (!Number.isInteger(otherId) || otherId <= 0) throw new HttpError(400, '对比版本不正确');
+  const b = resumeRow(otherId);
+  if (!a || !b) throw new HttpError(404, '简历版本不存在');
+  if (a.id === b.id) throw new HttpError(400, '请选择两个不同的简历版本');
+  const lines = diffLines(String(a.content ?? ''), String(b.content ?? ''));
+  res.json({
+    a: { id: a.id, title: a.title, updated_at: a.updated_at },
+    b: { id: b.id, title: b.title, updated_at: b.updated_at },
+    lines,
+    added: lines.filter((l) => l.type === 'add').length,
+    removed: lines.filter((l) => l.type === 'del').length,
+  });
 });
 
 coreRouter.get(
@@ -137,14 +155,42 @@ coreRouter.get('/jobs', (_req, res) => {
   res.json({ jobs: rows });
 });
 
+const JOB_STATUS = ['open', 'paused', 'closed'];
+
+function jobPriority(value: unknown, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(2, Math.max(0, Math.round(n)));
+}
+
+function jobStatus(value: unknown, fallback: string): string {
+  const status = str(value, 20).trim() || fallback;
+  if (!JOB_STATUS.includes(status)) throw new HttpError(400, '岗位状态不合法');
+  return status;
+}
+
 coreRouter.post('/jobs', (req, res) => {
   const body = req.body ?? {};
   const title = str(body.title, 80).trim();
   if (!title) throw new HttpError(400, '请填写岗位名称');
   const now = nowIso();
   const info = db
-    .prepare('INSERT INTO job (title, company, jd, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-    .run(title, str(body.company, 80), str(body.jd, 20000), now, now);
+    .prepare(
+      'INSERT INTO job (title, company, jd, location, salary_range, deadline, priority, source_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      title,
+      str(body.company, 80),
+      str(body.jd, 20000),
+      str(body.location, 200),
+      str(body.salaryRange, 100),
+      str(body.deadline, 40).trim() || null,
+      jobPriority(body.priority, 0),
+      str(body.sourceUrl, 2000),
+      jobStatus(body.status, 'open'),
+      now,
+      now,
+    );
   if (body.makeActive !== false) setSetting('active_job_id', String(info.lastInsertRowid));
   res.status(201).json({ job: jobRow(Number(info.lastInsertRowid)) });
 });
@@ -154,10 +200,18 @@ coreRouter.put('/jobs/:id', (req, res) => {
   const existing = jobRow(id);
   if (!existing) throw new HttpError(404, '岗位不存在');
   const body = req.body ?? {};
-  db.prepare('UPDATE job SET title = ?, company = ?, jd = ?, updated_at = ? WHERE id = ?').run(
+  db.prepare(
+    'UPDATE job SET title = ?, company = ?, jd = ?, location = ?, salary_range = ?, deadline = ?, priority = ?, source_url = ?, status = ?, updated_at = ? WHERE id = ?',
+  ).run(
     body.title !== undefined ? str(body.title, 80).trim() : String(existing.title),
     body.company !== undefined ? str(body.company, 80) : String(existing.company),
     body.jd !== undefined ? str(body.jd, 20000) : String(existing.jd),
+    body.location !== undefined ? str(body.location, 200) : String(existing.location),
+    body.salaryRange !== undefined ? str(body.salaryRange, 100) : String(existing.salary_range),
+    body.deadline !== undefined ? str(body.deadline, 40).trim() || null : (existing.deadline as string | null),
+    body.priority !== undefined ? jobPriority(body.priority, Number(existing.priority)) : Number(existing.priority),
+    body.sourceUrl !== undefined ? str(body.sourceUrl, 2000) : String(existing.source_url),
+    body.status !== undefined ? jobStatus(body.status, String(existing.status)) : String(existing.status),
     nowIso(),
     id,
   );

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
-import type { Resume } from '../types';
+import type { Resume, ResumeDiff } from '../types';
 import { diffLines } from '../lib/diff';
-import { Card, PageHeader, PageSkeleton, ErrorState, Field } from '../components/ui';
+import { Card, CopyButton, PageHeader, PageSkeleton, ErrorState, Field } from '../components/ui';
 
 /**
  * 两版简历对比：复用 lib/diff 的行级 LCS，不改动现有简历编辑页。
@@ -14,6 +14,8 @@ export function ResumeCompare() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [serverDiff, setServerDiff] = useState<ResumeDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
 
   useEffect(() => {
     api
@@ -28,9 +30,32 @@ export function ResumeCompare() {
   const a = resumes.find((r) => r.id === aId) ?? null;
   const b = resumes.find((r) => r.id === bId) ?? null;
 
-  const diff = useMemo(() => (a && b ? diffLines(a.content, b.content) : []), [a, b]);
+  useEffect(() => {
+    if (!a || !b || a.id === b.id) {
+      setServerDiff(null);
+      return;
+    }
+    let cancelled = false;
+    setDiffLoading(true);
+    api
+      .resumeDiff(a.id, b.id)
+      .then((r) => !cancelled && setServerDiff(r))
+      .catch(() => !cancelled && setServerDiff(null))
+      .finally(() => !cancelled && setDiffLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [a, b]);
+
+  const diff = useMemo(() => {
+    if (serverDiff) return serverDiff.lines;
+    return a && b && a.id !== b.id ? diffLines(a.content, b.content) : [];
+  }, [serverDiff, a, b]);
   const added = diff.filter((l) => l.type === 'add').length;
   const removed = diff.filter((l) => l.type === 'del').length;
+  const diffText = diff
+    .map((l) => `${l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}${l.text}`)
+    .join('\n');
 
   const setSide = (key: 'a' | 'b', value: string) => {
     const next = new URLSearchParams(params);
@@ -80,12 +105,18 @@ export function ResumeCompare() {
               </Field>
             </div>
             <p className="muted small">
-              {a && b ? `新增 ${added} 行 · 删除 ${removed} 行` : '请选择两个版本'}
+              {a && b && a.id !== b.id
+                ? `新增 ${added} 行 · 删除 ${removed} 行${diffLoading ? ' · 正在读取服务端差异…' : ''}`
+                : '请选择两个不同的版本'}
             </p>
           </Card>
 
-          {a && b && (
-            <Card title="差异" subtitle={`${a.title} → ${b.title}`}>
+          {a && b && a.id !== b.id && (
+            <Card
+              title="差异"
+              subtitle={`${a.title} → ${b.title}`}
+              extra={<CopyButton text={diffText} label="复制差异文本" />}
+            >
               <pre className="diff-view">
                 {diff.map((l, i) => (
                   <span key={i} className={`diff-line diff-${l.type}`}>

@@ -6,6 +6,9 @@ import type { Job } from '../types';
 import { formatDateTime } from '../lib/format';
 import { Button, Card, Chip, EmptyState, ErrorState, Field, Modal, PageHeader, PageSkeleton } from '../components/ui';
 
+const PRIORITY_LABEL: Record<number, string> = { 0: '普通', 1: '高优先', 2: '紧急' };
+const STATUS_LABEL: Record<string, string> = { open: '开放中', paused: '已暂停', closed: '已关闭' };
+
 export function Jobs() {
   const navigate = useNavigate();
   const { jobs, refreshJobs, setActiveJob, activeJob, toast } = useApp();
@@ -14,7 +17,17 @@ export function Jobs() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Job | null>(null);
   const [confirming, setConfirming] = useState<Job | null>(null);
-  const [form, setForm] = useState({ title: '', company: '', jd: '' });
+  const [form, setForm] = useState({
+    title: '',
+    company: '',
+    jd: '',
+    location: '',
+    salaryRange: '',
+    deadline: '',
+    priority: 0,
+    sourceUrl: '',
+    status: 'open',
+  });
   const [saving, setSaving] = useState(false);
   const [jdUrl, setJdUrl] = useState('');
   const [jdFetching, setJdFetching] = useState(false);
@@ -31,7 +44,17 @@ export function Jobs() {
   useEffect(load, []);
 
   const openCreate = () => {
-    setForm({ title: '', company: '', jd: '' });
+    setForm({
+      title: '',
+      company: '',
+      jd: '',
+      location: '',
+      salaryRange: '',
+      deadline: '',
+      priority: 0,
+      sourceUrl: '',
+      status: 'open',
+    });
     setEditing(null);
     setJdUrl('');
     setJdMsg(null);
@@ -39,7 +62,17 @@ export function Jobs() {
     setOpen(true);
   };
   const openEdit = (j: Job) => {
-    setForm({ title: j.title, company: j.company, jd: j.jd });
+    setForm({
+      title: j.title,
+      company: j.company,
+      jd: j.jd,
+      location: j.location || '',
+      salaryRange: j.salary_range || '',
+      deadline: j.deadline || '',
+      priority: j.priority ?? 0,
+      sourceUrl: j.source_url || '',
+      status: j.status || 'open',
+    });
     setEditing(j);
     setJdUrl('');
     setJdMsg(null);
@@ -77,11 +110,22 @@ export function Jobs() {
     if (!form.title.trim()) return toast('请填写岗位名称', 'err');
     setSaving(true);
     try {
+      const payload = {
+        title: form.title.trim(),
+        company: form.company,
+        jd: form.jd,
+        location: form.location,
+        salaryRange: form.salaryRange,
+        deadline: form.deadline || null,
+        priority: form.priority,
+        sourceUrl: form.sourceUrl,
+        status: form.status,
+      };
       if (editing) {
-        await api.updateJob(editing.id, { title: form.title.trim(), company: form.company, jd: form.jd });
+        await api.updateJob(editing.id, payload);
         toast('岗位已更新', 'ok');
       } else {
-        await api.createJob({ title: form.title.trim(), company: form.company, jd: form.jd });
+        await api.createJob(payload);
         toast('岗位已创建', 'ok');
       }
       await refreshJobs();
@@ -146,8 +190,17 @@ export function Jobs() {
               </div>
               <div className="chip-row">
                 {activeJob?.id === j.id && <Chip tone="green">当前</Chip>}
+                <Chip tone={j.status === 'closed' ? 'red' : j.status === 'paused' ? 'amber' : 'green'}>
+                  {STATUS_LABEL[j.status] || '开放中'}
+                </Chip>
+                {j.priority > 0 && <Chip tone={j.priority === 2 ? 'red' : 'amber'}>{PRIORITY_LABEL[j.priority]}</Chip>}
                 <Chip tone="ink">{j.jd ? `${j.jd.replace(/\s/g, '').length} 字 JD` : '暂无 JD'}</Chip>
               </div>
+            </div>
+            <div className="chip-row">
+              {j.location && <Chip>{j.location}</Chip>}
+              {j.salary_range && <Chip tone="blue">{j.salary_range}</Chip>}
+              {j.deadline && <Chip tone="amber">截止 {j.deadline}</Chip>}
             </div>
             <p className="job-jd">{j.jd ? j.jd.slice(0, 150) : '还没有粘贴 JD，匹配分析会不准确。'}</p>
             <div className="job-foot">
@@ -158,6 +211,9 @@ export function Jobs() {
             <div className="row gap-8 wrap">
               <Button size="sm" variant="ink" onClick={() => navigate(`/optimize?jobId=${j.id}`)}>
                 做匹配分析
+              </Button>
+              <Button size="sm" onClick={() => navigate(`/jobs/${j.id}/skills`)}>
+                技能图谱
               </Button>
               <Button size="sm" onClick={() => openEdit(j)}>
                 编辑
@@ -204,6 +260,60 @@ export function Jobs() {
             />
           </Field>
         </div>
+        <div className="form-row">
+          <Field label="工作地点">
+            <input
+              className="input"
+              value={form.location}
+              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+              placeholder="例如：上海 / 远程"
+            />
+          </Field>
+          <Field label="薪资范围">
+            <input
+              className="input"
+              value={form.salaryRange}
+              onChange={(e) => setForm((f) => ({ ...f, salaryRange: e.target.value }))}
+              placeholder="例如：200-300 元/天"
+            />
+          </Field>
+        </div>
+        <div className="form-row">
+          <Field label="投递截止">
+            <input
+              className="input"
+              type="date"
+              value={form.deadline}
+              onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
+            />
+          </Field>
+          <Field label="优先级">
+            <select
+              className="input"
+              value={form.priority}
+              onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))}
+            >
+              <option value={0}>普通</option>
+              <option value={1}>高优先</option>
+              <option value={2}>紧急</option>
+            </select>
+          </Field>
+          <Field label="状态">
+            <select className="input" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+              <option value="open">开放中</option>
+              <option value="paused">已暂停</option>
+              <option value="closed">已关闭</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="岗位原链接">
+          <input
+            className="input"
+            value={form.sourceUrl}
+            onChange={(e) => setForm((f) => ({ ...f, sourceUrl: e.target.value }))}
+            placeholder="可选，记录招聘页地址便于回看"
+          />
+        </Field>
         <div className="jd-import">
           <div className="jd-import-head">
             <span className="jd-import-label">从招聘页面抓取</span>

@@ -12,6 +12,13 @@ import { reviewRouter } from './routes/review.js';
 import { demoRouter } from './routes/demo.js';
 import { BACKUP_ROUTER } from './routes/backup.js';
 import { applicationsRouter } from './routes/applications.js';
+import { experiencesRouter } from './routes/experiences.js';
+import { skillsRouter } from './routes/skills.js';
+import { trainingRouter } from './routes/training.js';
+import { pitchRouter } from './routes/pitch.js';
+import { bankCardRouter } from './routes/bank-card.js';
+import { maintenanceRouter } from './routes/maintenance.js';
+import { backfillTurnTags } from './tags.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -33,7 +40,13 @@ function clientIp(req: Request): string {
 function needsAiLimit(pathname: string): boolean {
   if (pathname === '/ai/status') return false;
   if (pathname.startsWith('/ai/')) return true;
-  return /^\/interviews\/\d+\/(answer|finish)$/.test(pathname);
+  return (
+    /^\/interviews\/\d+\/(answer|finish)$/.test(pathname) ||
+    /^\/jobs\/\d+\/skills$/.test(pathname) ||
+    pathname === '/pitch/generate' ||
+    /^\/bank\/\d+\/card\/generate$/.test(pathname) ||
+    /^\/interviews\/\d+\/turns\/\d+\/skip$/.test(pathname)
+  );
 }
 
 app.use('/api', (req, res, next) => {
@@ -80,6 +93,19 @@ app.use('/api', reviewRouter);
 app.use('/api', demoRouter);
 app.use('/api', BACKUP_ROUTER);
 app.use('/api', applicationsRouter);
+app.use('/api', experiencesRouter);
+app.use('/api', skillsRouter);
+app.use('/api', trainingRouter);
+app.use('/api', pitchRouter);
+app.use('/api', bankCardRouter);
+app.use('/api', maintenanceRouter);
+
+// DATA-04：旧库回填薄弱标签；失败不影响启动。
+try {
+  backfillTurnTags();
+} catch (err) {
+  console.warn('[tags] 回填薄弱标签失败:', err instanceof Error ? err.message : err);
+}
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: '接口不存在' } });

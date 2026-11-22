@@ -4,6 +4,7 @@ import { api, ApiError } from '../api';
 import { useApp } from '../state';
 import type { ResumeTemplate } from '../types';
 import { renderMarkdown } from '../lib/markdown';
+import { ExperiencePicker } from '../components/ExperiencePicker';
 import { Button, Callout, Card, Chip, ErrorState, Field, PageHeader, PageSkeleton, SourceBadge } from '../components/ui';
 
 export function TemplateBuild() {
@@ -21,6 +22,7 @@ export function TemplateBuild() {
   const [polishSource, setPolishSource] = useState<'llm' | 'local' | null>(null);
   const [polished, setPolished] = useState<string | null>(null);
   const [title, setTitle] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -122,8 +124,7 @@ export function TemplateBuild() {
     }
   };
 
-  const polish = async () => {
-    if (!template) return;
+  const polish = async () => {    if (!template) return;
     if (assembled.trim().length < 30) {
       toast('先填写内容再润色', 'err');
       return;
@@ -141,6 +142,14 @@ export function TemplateBuild() {
     } finally {
       setPolishing(false);
     }
+  };
+
+  const insertExperience = (text: string) => {
+    const key = template?.sections[step]?.key;
+    if (!key) return;
+    setAnswers((prev) => ({ ...prev, [key]: prev[key] ? `${prev[key]}\n\n${text}` : text }));
+    setPolished(null);
+    toast('已从素材库插入到当前板块', 'ok');
   };
 
   if (loading)
@@ -197,6 +206,12 @@ export function TemplateBuild() {
                   {q}
                 </span>
               ))}
+            </div>
+            <div className="row between wrap gap-8 mt-8">
+              <span className="muted small">素材库里已有 STAR 片段？可以直接插入这一栏再改。</span>
+              <Button size="sm" variant="ghost" onClick={() => setPickerOpen(true)}>
+                从素材库插入
+              </Button>
             </div>
             <Field label="你的内容" required={sec.required}>
               <textarea
@@ -319,6 +334,13 @@ export function TemplateBuild() {
           </Card>
         </div>
       </div>
+
+      <ExperiencePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(text) => insertExperience(text)}
+        jobId={activeJob?.id ?? null}
+      />
     </div>
   );
 }

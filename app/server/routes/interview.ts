@@ -20,6 +20,8 @@ import { FOLLOWUP_THRESHOLD, analyzeAnswer, buildFallbackFollowup, calibrateScor
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { buildDocx } from '../docx-export.js';
 import { createAiJob, failAiJob, finishAiJob, getAiJob, hasPendingAiJob } from '../ai-jobs.js';
+import { experienceSnippet } from './experiences.js';
+import { deriveTags } from '../tags.js';
 
 export const interviewRouter = Router();
 
@@ -53,6 +55,10 @@ interface TurnRow {
   source: string;
   created_at: string;
   answered_at: string | null;
+  answer_started_at: string | null;
+  duration_sec: number | null;
+  tags_json: string | null;
+  skipped: number;
 }
 
 /**
@@ -60,7 +66,7 @@ interface TurnRow {
  * 沿用「202 + 轮询」模式，任务状态落 ai_job 表（PERF-08），
  * 实例重启后仍可继续轮询；仍按单实例设计，不承诺跨实例共享。
  */
-function jobKindOf(interviewId: number, kind: 'answer' | 'finish'): string {
+function jobKindOf(interviewId: number, kind: 'answer' | 'finish' | 'skip'): string {
   return `interview:${interviewId}:${kind}`;
 }
 
@@ -79,7 +85,7 @@ function hasPendingJob(interviewId: number, kind: 'answer' | 'finish'): boolean 
   return hasPendingAiJob(jobKindOf(interviewId, kind));
 }
 
-function startInterviewJob<T>(interviewId: number, kind: 'answer' | 'finish', task: () => Promise<T>): string {
+function startInterviewJob<T>(interviewId: number, kind: 'answer' | 'finish' | 'skip', task: () => Promise<T>): string {
   const jobId = randomUUID();
   createAiJob(jobId, jobKindOf(interviewId, kind), { interviewId, kind });
   void (async () => {
@@ -228,7 +234,15 @@ async function makeQuestion(
   try {
     const { data, meta } = await chatJSON(
       questionSchema,
-      questionPrompt({ roundKey, resumeText, jobTitle, jd, asked, seedQuestion }),
+      questionPrompt({
+        roundKey,
+        resumeText,
+        jobTitle,
+        jd,
+        asked,
+        seedQuestion,
+        experiences: experienceSnippet(iv.job_id),
+      }),
       { tag: `question-${roundKey}`, temperature: 0.75, maxTokens: 500 },
     );
     return { question: data.question.trim(), focus: data.focus || roundByKey(roundKey).name, source: meta.source };
@@ -250,11 +264,12 @@ function insertTurn(
   focus: string,
   source: string,
 ): TurnRow {
+  const now = nowIso();
   const info = db
     .prepare(
-      'INSERT INTO interview_turn (interview_id, round_key, seq, depth, parent_id, question, focus, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO interview_turn (interview_id, round_key, seq, depth, parent_id, question, focus, source, created_at, answer_started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(interviewId, roundKey, seq, depth, parentId, question, focus, source, nowIso());
+    .run(interviewId, roundKey, seq, depth, parentId, question, focus, source, now, now);
   return db.prepare('SELECT * FROM interview_turn WHERE id = ?').get(Number(info.lastInsertRowid)) as TurnRow;
 }
 
@@ -270,6 +285,7 @@ function sessionPayload(ivId: number) {
   const turns = turnsOf(ivId);
   const plan = planFor(iv);
   const answeredBase = turns.filter((t) => t.depth === 0 && t.answer !== null).length;
+  const skippedBase = turns.filter((t) => t.depth === 0 && t.skipped === 1).length;
   const total = totalBase(iv);
   const answeredAll = turns.filter((t) => t.answer !== null).length;
   const currentRound = plan.find((r) => r.key === iv.round_key) || plan[0];
@@ -290,15 +306,17 @@ function sessionPayload(ivId: number) {
     turns: turns.map((t) => ({
       ...t,
       feedback: parseJson<FeedbackResult | null>(t.feedback_json, null),
+      tags: parseJson<string[]>(t.tags_json, []),
       focusLabel: FOLLOWUP_FOCUS_LABEL[t.focus] || t.focus,
     })),
     progress: {
       answeredBase,
+      skippedBase,
       total,
       answeredAll,
-      percent: total ? Math.min(100, Math.round((answeredBase / total) * 100)) : 0,
+      percent: total ? Math.min(100, Math.round(((answeredBase + skippedBase) / total) * 100)) : 0,
     },
-    pendingTurn: turns.find((t) => t.answer === null) || null,
+    pendingTurn: turns.find((t) => t.answer === null && !t.skipped) || null,
   };
 }
 
@@ -385,9 +403,16 @@ interviewRouter.get(
       : undefined;
     const turns = db
       .prepare(
-        'SELECT question, answer, score, feedback_json FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL ORDER BY round_key, seq, id',
+        'SELECT question, answer, score, feedback_json, duration_sec, tags_json FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL ORDER BY round_key, seq, id',
       )
-      .all(id) as { question: string; answer: string; score: number | null; feedback_json: string | null }[];
+      .all(id) as {
+      question: string;
+      answer: string;
+      score: number | null;
+      feedback_json: string | null;
+      duration_sec: number | null;
+      tags_json: string | null;
+    }[];
     const lines = [
       '# 模拟面试报告',
       '',
@@ -416,7 +441,7 @@ interviewRouter.get(
         } catch {
           feedback = '';
         }
-        return `### ${i + 1}. ${t.question}\n\n**我的回答**：${t.answer}\n\n**得分**：${t.score ?? '—'}\n\n**反馈**：${feedback}\n`;
+        return `### ${i + 1}. ${t.question}\n\n**我的回答**：${t.answer}\n\n**得分**：${t.score ?? '—'}\n\n**用时**：${t.duration_sec != null ? `${t.duration_sec} 秒` : '—'}\n\n**薄弱标签**：${parseJson<string[]>(t.tags_json, []).join('、') || '—'}\n\n**反馈**：${feedback}\n`;
       }),
     ];
     const buffer = await buildDocx(`面试报告-${id}`, lines.join('\n'));
@@ -535,12 +560,28 @@ async function runAnswerJob(id: number, turnId: number, answer: string) {
   // source 同时承担「题目来源」语义：常见题答完后仍保留 common，避免前端丢失来源标注；
   // 其他题型沿用原有行为，记录反馈是模型还是本地降级。
   const sourceAfterAnswer = turn.source === 'common' ? 'common' : source;
+  // DATA-06：用题目发出时间到提交时间的真实差值记录用时，避免前端计时被节流影响。
+  const startedMs = turn.answer_started_at ? Date.parse(turn.answer_started_at) : NaN;
+  const durationSec = Number.isFinite(startedMs)
+    ? Math.max(0, Math.min(86_400, Math.round((Date.now() - startedMs) / 1000)))
+    : null;
+  const tags = deriveTags(feedback, score);
   // 原子占位：并发提交时只有一个请求能把 NULL 改成答案，避免重复生成下一题。
   const claimed = db
     .prepare(
-      'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ? WHERE id = ? AND interview_id = ? AND answer IS NULL',
+      'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ?, duration_sec = ?, tags_json = ? WHERE id = ? AND interview_id = ? AND answer IS NULL',
     )
-    .run(answer, JSON.stringify(feedback), score, sourceAfterAnswer, nowIso(), turnId, id);
+    .run(
+      answer,
+      JSON.stringify(feedback),
+      score,
+      sourceAfterAnswer,
+      nowIso(),
+      durationSec,
+      JSON.stringify(tags),
+      turnId,
+      id,
+    );
   if (claimed.changes === 0) throw new HttpError(409, '这道题已经作答过了');
 
   // 用最新状态推进轮次，避免请求开始时读到的 question_index 过期。
@@ -610,6 +651,82 @@ interviewRouter.post(
     if (hasPendingJob(id, 'finish')) throw new HttpError(409, '报告正在生成，暂时不能继续作答');
 
     const jobId = startInterviewJob(id, 'answer', () => runAnswerJob(id, turnId, answer));
+    res.status(202).json({ jobId, status: 'pending' });
+  }),
+);
+
+/** UX-07：换一题。只允许跳过未作答的题，每场最多 2 次。 */
+async function runSkipJob(id: number, turnId: number) {
+  let iv = getInterview(id);
+  if (iv.status !== 'active') throw new HttpError(409, '这场面试已经结束');
+  const turn = db
+    .prepare('SELECT * FROM interview_turn WHERE id = ? AND interview_id = ?')
+    .get(turnId, id) as TurnRow | undefined;
+  if (!turn) throw new HttpError(404, '题目不存在');
+  if (turn.answer !== null) throw new HttpError(409, '这道题已经作答过了');
+  if (turn.skipped) throw new HttpError(409, '这道题已经跳过了');
+  if (hasPendingJob(id, 'answer')) throw new HttpError(409, '正在生成上一题的反馈，稍后再换题');
+
+  const skipped = db
+    .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND skipped = 1')
+    .get(id) as { n: number };
+  if (skipped.n >= 2) throw new HttpError(409, '每场面试最多跳过 2 题，请先作答或直接结束');
+
+  const claimed = db
+    .prepare('UPDATE interview_turn SET skipped = 1 WHERE id = ? AND interview_id = ? AND answer IS NULL AND skipped = 0')
+    .run(turnId, id);
+  if (claimed.changes === 0) throw new HttpError(409, '这道题状态已变化，请刷新后重试');
+
+  iv = getInterview(id);
+  let nextTurn: TurnRow | null = null;
+  let allDone = false;
+  const plan = planFor(iv);
+  const idx = plan.findIndex((r) => r.key === iv.round_key);
+  const round = plan[idx] || plan[0];
+  const nextIndex = iv.question_index + 1;
+  if (nextIndex < round.count) {
+    const q = await makeQuestion(iv, round.key);
+    if (getInterview(id).status !== 'active') {
+      allDone = true;
+    } else {
+      nextTurn = insertTurn(id, round.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
+      db.prepare('UPDATE interview SET question_index = ? WHERE id = ?').run(nextIndex, id);
+    }
+  } else if (idx + 1 < plan.length) {
+    const nr = plan[idx + 1];
+    const q = await makeQuestion(iv, nr.key);
+    if (getInterview(id).status !== 'active') {
+      allDone = true;
+    } else {
+      db.prepare('UPDATE interview SET round_key = ?, question_index = 0 WHERE id = ?').run(nr.key, id);
+      nextTurn = insertTurn(id, nr.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
+    }
+  } else {
+    allDone = true;
+  }
+
+  return { skippedTurnId: turnId, nextTurn, allDone, remainingSkips: Math.max(0, 1 - skipped.n), session: sessionPayload(id) };
+}
+
+interviewRouter.post(
+  '/interviews/:id/turns/:turnId/skip',
+  ah(async (req, res) => {
+    const id = idOf(req);
+    const turnId = Number(req.params.turnId);
+    if (!Number.isInteger(turnId) || turnId <= 0) throw new HttpError(400, '题目 ID 不正确');
+    const iv = getInterview(id);
+    if (iv.status !== 'active') throw new HttpError(409, '这场面试已经结束');
+    const turn = db
+      .prepare('SELECT * FROM interview_turn WHERE id = ? AND interview_id = ?')
+      .get(turnId, id) as TurnRow | undefined;
+    if (!turn) throw new HttpError(404, '题目不存在');
+    if (turn.answer !== null) throw new HttpError(409, '这道题已经作答过了');
+    const skipped = db
+      .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND skipped = 1')
+      .get(id) as { n: number };
+    if (skipped.n >= 2) throw new HttpError(409, '每场面试最多跳过 2 题');
+
+    const jobId = startInterviewJob(id, 'skip', () => runSkipJob(id, turnId));
     res.status(202).json({ jobId, status: 'pending' });
   }),
 );

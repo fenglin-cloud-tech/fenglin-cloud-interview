@@ -80,6 +80,83 @@ ${resumeText}
   ];
 }
 
+export function skillsPrompt(jobTitle: string, jd: string): ChatMsg[] {
+  return [
+    { role: 'system', content: `${BASE}\n你负责从招聘 JD 中提取可比较的技能标签。${JSON_ONLY}` },
+    {
+      role: 'user',
+      content: `目标岗位：${jobTitle || '未命名岗位'}
+
+JD 原文：
+"""
+${jd.slice(0, 6000)}
+"""
+
+请提取 6-20 个技能标签：技术栈、工具、业务能力、软技能都可以，但必须是 JD 里真实出现或明确隐含的要求。
+weight 表示硬性程度：3 = 硬性要求，2 = 重要加分，1 = 一般提及。
+不要编造 JD 中不存在的技能。
+
+严格输出 JSON：{ "skills": [{ "skill": "标签", "weight": 1 }] }`,
+    },
+  ];
+}
+
+export function pitchPrompt(params: {
+  resumeText: string;
+  jobTitle: string;
+  profile: string;
+  experiences: string;
+}): ChatMsg[] {
+  return [
+    {
+      role: 'system',
+      content: `${BASE}\n你负责把候选人的真实经历整理成可直接背下来的中文自我介绍。${JSON_ONLY}`,
+    },
+    {
+      role: 'user',
+      content: `目标岗位：${params.jobTitle || '未指定'}
+候选人基本信息：${params.profile || '（未填写）'}
+
+简历：
+"""
+${params.resumeText.slice(0, 5000)}
+"""
+${params.experiences ? `\nSTAR 经历素材：\n${params.experiences.slice(0, 2000)}\n` : ''}
+
+请生成 60 秒、90 秒、120 秒三版中文自我介绍：
+- 全部用第一人称口语，适合直接朗读，不要书面语和 Markdown；
+- 60 秒约 180-220 字，90 秒约 270-330 字，120 秒约 360-440 字；低于下限视为不合格，请补足与岗位相关的细节；
+- 结构：我是谁 → 与岗位最相关的一段经历（做什么、怎么做、结果）→ 为什么投这个岗位 → 一句收尾；
+- 只能使用简历与素材里已有的事实，缺少数据时写「待补充：xx」，不得编造公司、项目、数字；
+- 每版给出 outline（3-5 个要点）和 tips（1-3 条朗读/停顿建议）。
+
+严格输出 JSON：{ "versions": [{ "duration": 60, "text": "...", "outline": ["..."], "tips": ["..."] }] }`,
+    },
+  ];
+}
+
+export function bankCardPrompt(params: { question: string; category: string; jobTitle: string }): ChatMsg[] {
+  return [
+    { role: 'system', content: `${BASE}\n你负责把一道面试题拆成可复习的解析卡。${JSON_ONLY}` },
+    {
+      role: 'user',
+      content: `目标岗位：${params.jobTitle || '未指定'}
+题目分类：${params.category}
+题目：${params.question}
+
+请输出一张解析卡：
+- summary：这道题真正想考察什么，1-2 句；
+- keyPoints：3-6 个答题要点；
+- framework：回答框架（3-5 步，每步 title + detail）；
+- sample：一段示例回答，必须用「（示例）」标注可替换为个人经历的位置，不得编造具体公司/数字；
+- pitfalls：2-4 个常见扣分点；
+- followups：2-4 个可能追问。
+
+严格输出 JSON：{ "summary": "...", "keyPoints": ["..."], "framework": [{ "title": "...", "detail": "..." }], "sample": "...", "pitfalls": ["..."], "followups": ["..."] }`,
+    },
+  ];
+}
+
 export function questionPrompt(params: {
   roundKey: string;
   resumeText: string;
@@ -87,6 +164,7 @@ export function questionPrompt(params: {
   jd?: string;
   asked: string[];
   seedQuestion?: string;
+  experiences?: string;
 }): ChatMsg[] {
   const round = roundByKey(params.roundKey);
   const roundRule: Record<string, string> = {
@@ -106,7 +184,7 @@ ${params.jd ? `岗位 JD（节选）：${params.jd.slice(0, 1200)}` : ''}
 """
 ${params.resumeText.slice(0, 4000)}
 """
-
+${params.experiences ? `\n候选人自己整理的 STAR 经历素材（可据此把问题问得更具体，不要照抄成题目）：\n${params.experiences.slice(0, 1600)}\n` : ''}
 本轮要求：${roundRule[round.key]}
 已经问过的问题（不要重复）：
 ${params.asked.length ? params.asked.map((q, i) => `${i + 1}. ${q}`).join('\n') : '（无）'}

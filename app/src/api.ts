@@ -19,6 +19,12 @@ import type {
   GrowthStats,
   Dossier,
   DemoStatus,
+  ExperienceCard,
+  BankCard,
+  JobSkillsData,
+  PitchResultData,
+  ResumeDiff,
+  TrainingTask,
   ReviewPlan,
   ReviewKind,
   ReviewResult,
@@ -63,10 +69,24 @@ export interface FinishJobResult {
   session: Session;
 }
 
+export interface SkipJobResult {
+  skippedTurnId: number;
+  nextTurn: Session['turns'][number] | null;
+  allDone: boolean;
+  remainingSkips: number;
+  session: Session;
+}
+
 function needsAiConsent(path: string): boolean {
   if (path === '/ai/status') return false;
   if (path.startsWith('/ai/')) return true;
-  return /^\/interviews\/\d+\/(answer|finish)$/.test(path);
+  return (
+    /^\/interviews\/\d+\/(answer|finish)$/.test(path) ||
+    /^\/jobs\/\d+\/skills$/.test(path) ||
+    path === '/pitch/generate' ||
+    /^\/bank\/\d+\/card\/generate$/.test(path) ||
+    /^\/interviews\/\d+\/turns\/\d+\/skip$/.test(path)
+  );
 }
 
 /** 普通请求默认 20s 超时；长任务已改为 202 + 轮询，不再占用单个请求。 */
@@ -224,11 +244,69 @@ export const api = {
   updateResume: (id: number, body: { title?: string; content?: string; jobId?: number | null }) =>
     put<{ resume: Resume }>(`/resumes/${id}`, body),
   deleteResume: (id: number) => del<{ ok: boolean }>(`/resumes/${id}`),
+  resumeDiff: (a: number, b: number) => request<ResumeDiff>(`/resumes/${a}/diff/${b}`),
+
+  experiences: (params?: { q?: string; jobId?: number | null; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.q) sp.set('q', params.q);
+    if (params?.jobId) sp.set('jobId', String(params.jobId));
+    if (params?.limit) sp.set('limit', String(params.limit));
+    const qs = sp.toString();
+    return request<{ experiences: ExperienceCard[] }>(`/experiences${qs ? `?${qs}` : ''}`);
+  },
+  createExperience: (body: {
+    title: string;
+    role?: string;
+    situation?: string;
+    task?: string;
+    action?: string;
+    result?: string;
+    metrics?: string;
+    tags?: string;
+    jobId?: number | null;
+  }) => post<{ experience: ExperienceCard }>('/experiences', body),
+  updateExperience: (
+    id: number,
+    body: {
+      title?: string;
+      role?: string;
+      situation?: string;
+      task?: string;
+      action?: string;
+      result?: string;
+      metrics?: string;
+      tags?: string;
+      jobId?: number | null;
+    },
+  ) => put<{ experience: ExperienceCard }>(`/experiences/${id}`, body),
+  deleteExperience: (id: number) => del<{ ok: boolean }>(`/experiences/${id}`),
 
   jobs: () => request<{ jobs: Job[] }>('/jobs'),
-  createJob: (body: { title: string; company?: string; jd?: string }) => post<{ job: Job }>('/jobs', body),
-  updateJob: (id: number, body: { title?: string; company?: string; jd?: string }) =>
-    put<{ job: Job }>(`/jobs/${id}`, body),
+  createJob: (body: {
+    title: string;
+    company?: string;
+    jd?: string;
+    location?: string;
+    salaryRange?: string;
+    deadline?: string | null;
+    priority?: number;
+    sourceUrl?: string;
+    status?: string;
+  }) => post<{ job: Job }>('/jobs', body),
+  updateJob: (
+    id: number,
+    body: {
+      title?: string;
+      company?: string;
+      jd?: string;
+      location?: string;
+      salaryRange?: string;
+      deadline?: string | null;
+      priority?: number;
+      sourceUrl?: string;
+      status?: string;
+    },
+  ) => put<{ job: Job }>(`/jobs/${id}`, body),
   deleteJob: (id: number) => del<{ ok: boolean }>(`/jobs/${id}`),
   applications: () => request<{ applications: ApplicationRecord[] }>('/applications'),
   applicationDetail: (id: number) =>
@@ -288,6 +366,49 @@ export const api = {
       | { ok: true; jd: string; title: string; finalUrl: string; httpStatus: number; chars: number; truncated: boolean }
       | { ok: false; code: string; message: string }
     >('/jobs/fetch-jd', { url }),
+
+  jobSkills: (jobId: number) => request<JobSkillsData>(`/jobs/${jobId}/skills`),
+  extractJobSkills: (jobId: number, forceLocal = false) =>
+    post<{ jobId: string; status: 'pending' }>(`/jobs/${jobId}/skills`, { forceLocal }),
+  jobSkillsJob: (jobId: number, jobIdOfTask: string) =>
+    request<InterviewJobResponse<JobSkillsData>>(`/jobs/${jobId}/skills/jobs/${jobIdOfTask}`),
+
+  trainingTasks: (params?: { date?: string; from?: string; to?: string; status?: string }) => {
+    const sp = new URLSearchParams();
+    if (params?.date) sp.set('date', params.date);
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.status) sp.set('status', params.status);
+    const qs = sp.toString();
+    return request<{ tasks: TrainingTask[] }>(`/training-tasks${qs ? `?${qs}` : ''}`);
+  },
+  createTrainingTask: (body: { planDate: string; title: string; kind?: string; refId?: number | null }) =>
+    post<{ task: TrainingTask }>('/training-tasks', body),
+  updateTrainingTask: (id: number, body: { title?: string; status?: string }) =>
+    patch<{ task: TrainingTask }>(`/training-tasks/${id}`, body),
+  deleteTrainingTask: (id: number) => del<{ ok: boolean }>(`/training-tasks/${id}`),
+
+  dataCounts: () =>
+    request<{ interviews: number; reviews: number; bankItems: number; applications: number; turns: number }>(
+      '/data/counts',
+    ),
+  clearModule: (module: 'interviews' | 'reviews' | 'bank' | 'applications') =>
+    post<{ ok: boolean; module: string; deleted: Record<string, number> }>('/data/clear', {
+      module,
+      confirm: 'CLEAR',
+    }),
+
+  generatePitch: (body: { resumeId?: number | null; jobId?: number | null }) =>
+    post<{ jobId: string; status: 'pending' }>('/pitch/generate', body),
+  pitchJob: (jobId: string) => request<InterviewJobResponse<PitchResultData>>(`/pitch/generate/${jobId}`),
+
+  bankCard: (id: number) =>
+    request<{ card: BankCard | null; question: string; category: string }>(`/bank/${id}/card`),
+  generateBankCard: (id: number) => post<{ jobId: string; status: 'pending' }>(`/bank/${id}/card/generate`),
+  bankCardJob: (id: number, jobId: string) =>
+    request<InterviewJobResponse<{ card: BankCard; question: string; category: string }>>(
+      `/bank/${id}/card/jobs/${jobId}`,
+    ),
 
   suggestions: (body: { resumeText: string; jobTitle: string }) =>
     post<{ jobId: string; status: 'pending' }>('/ai/suggestions', body),
@@ -367,6 +488,8 @@ export const api = {
   session: (id: number) => request<Session>(`/interviews/${id}`),
   answer: (id: number, body: { turnId: number; answer: string }) =>
     post<{ jobId: string; status: 'pending' }>(`/interviews/${id}/answer`, body),
+  skipTurn: (id: number, turnId: number) =>
+    post<{ jobId: string; status: 'pending' }>(`/interviews/${id}/turns/${turnId}/skip`),
   interviewJob: <T>(id: number, jobId: string) =>
     request<InterviewJobResponse<T>>(`/interviews/${id}/jobs/${jobId}`),
   finishInterview: (id: number) =>

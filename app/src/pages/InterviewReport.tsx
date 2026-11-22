@@ -96,6 +96,19 @@ export function InterviewReport() {
     );
   }
 
+  const answeredTurns = session.turns.filter((t) => t.answer);
+  const tagCounts = (() => {
+    const map = new Map<string, number>();
+    for (const t of answeredTurns) {
+      for (const tag of t.tags || []) map.set(tag, (map.get(tag) || 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+  const timed = answeredTurns.filter((t) => typeof t.duration_sec === 'number');
+  const avgSec = timed.length
+    ? Math.round(timed.reduce((sum, t) => sum + (t.duration_sec || 0), 0) / timed.length)
+    : null;
+
   return (
     <div className="page">
       <div className="report-head">
@@ -165,6 +178,26 @@ export function InterviewReport() {
         </Card>
       </div>
 
+      <Card title="薄弱标签与节奏" subtitle="由逐题反馈的 issues 自动聚合，可回填旧数据">
+        {tagCounts.length ? (
+          <div className="chip-row">
+            {tagCounts.map(([tag, n]) => (
+              <Chip key={tag} tone={n >= 3 ? 'red' : 'amber'}>
+                {tag} × {n}
+              </Chip>
+            ))}
+          </div>
+        ) : (
+          <p className="muted small">这场面试的反馈里还没有可聚合的薄弱标签。</p>
+        )}
+        {avgSec !== null && (
+          <p className="muted small mt-8">
+            平均每题用时 <strong>{avgSec} 秒</strong>
+            {timed.length < answeredTurns.length ? `（${timed.length}/${answeredTurns.length} 题有计时数据）` : ''}
+          </p>
+        )}
+      </Card>
+
       <Card title="下一步" paper>
         <div className="next-actions">
           <div>
@@ -194,6 +227,7 @@ export function InterviewReport() {
                     {t.depth > 0 && <Chip tone="ink">追问 {t.depth}</Chip>}
                     {t.question}
                   </span>
+                  {t.duration_sec != null && <span className="muted small">{t.duration_sec}s</span>}
                   <span className={`score-dot s${(t.score ?? 0) >= 80 ? '1' : (t.score ?? 0) >= 60 ? '2' : '3'}`}>
                     {t.score ?? '—'}
                   </span>
@@ -201,6 +235,15 @@ export function InterviewReport() {
                 <div className="qa-body">
                   <div className="qa-label">我的回答</div>
                   <p>{t.answer}</p>
+                  {!!t.tags?.length && (
+                    <div className="chip-row">
+                      {t.tags.map((tag) => (
+                        <Chip key={tag} tone="amber">
+                          {tag}
+                        </Chip>
+                      ))}
+                    </div>
+                  )}
                   {t.feedback && (
                     <>
                       <div className="qa-label">反馈</div>

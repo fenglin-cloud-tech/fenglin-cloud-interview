@@ -31,12 +31,18 @@ CREATE TABLE IF NOT EXISTS profile (
 );
 
 CREATE TABLE IF NOT EXISTS job (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  title       TEXT NOT NULL,
-  company     TEXT NOT NULL DEFAULT '',
-  jd          TEXT NOT NULL DEFAULT '',
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  title         TEXT NOT NULL,
+  company       TEXT NOT NULL DEFAULT '',
+  jd            TEXT NOT NULL DEFAULT '',
+  location      TEXT NOT NULL DEFAULT '',
+  salary_range  TEXT NOT NULL DEFAULT '',
+  deadline      TEXT,
+  priority      INTEGER NOT NULL DEFAULT 0,
+  source_url    TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'open',
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS resume (
@@ -90,7 +96,11 @@ CREATE TABLE IF NOT EXISTS interview_turn (
   score         INTEGER,
   source        TEXT NOT NULL DEFAULT 'llm',
   created_at    TEXT NOT NULL,
-  answered_at   TEXT
+  answered_at   TEXT,
+  answer_started_at TEXT,
+  duration_sec  INTEGER,
+  tags_json     TEXT,
+  skipped       INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS review (
@@ -117,6 +127,7 @@ CREATE TABLE IF NOT EXISTS bank_item (
   ask_count         INTEGER NOT NULL DEFAULT 0,
   last_score        INTEGER,
   last_practiced_at TEXT,
+  card_json         TEXT,
   created_at        TEXT NOT NULL
 );
 
@@ -177,6 +188,44 @@ CREATE TABLE IF NOT EXISTS application_link (
   PRIMARY KEY (kind, ref_id)
 );
 
+-- DATA-03：岗位技能标签，供技能图谱与岗位对比复用。
+CREATE TABLE IF NOT EXISTS job_skill (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id     INTEGER NOT NULL REFERENCES job(id) ON DELETE CASCADE,
+  skill      TEXT NOT NULL,
+  weight     INTEGER NOT NULL DEFAULT 1,
+  source     TEXT NOT NULL DEFAULT 'llm',
+  created_at TEXT NOT NULL
+);
+
+-- DATA-05：STAR 经历素材卡，可被简历模板、自我介绍、面试出题复用。
+CREATE TABLE IF NOT EXISTS experience_card (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL,
+  role       TEXT NOT NULL DEFAULT '',
+  situation  TEXT NOT NULL DEFAULT '',
+  task       TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT '',
+  result     TEXT NOT NULL DEFAULT '',
+  metrics    TEXT NOT NULL DEFAULT '',
+  tags       TEXT NOT NULL DEFAULT '',
+  job_id     INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- DATA-08：训练任务，供后续计划模块与今日任务使用。
+CREATE TABLE IF NOT EXISTS training_task (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_date  TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  ref_id     INTEGER,
+  title      TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'todo',
+  done_at    TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS demo_seed (
   kind       TEXT NOT NULL,
   ref_id     INTEGER NOT NULL,
@@ -203,6 +252,9 @@ CREATE INDEX IF NOT EXISTS idx_applink_app ON application_link(application_id);
 CREATE INDEX IF NOT EXISTS idx_applink_ref ON application_link(ref_id);
 CREATE INDEX IF NOT EXISTS idx_stage_log_app ON application_stage_log(application_id, changed_at);
 CREATE INDEX IF NOT EXISTS idx_ai_job_expires ON ai_job(expires_at);
+CREATE INDEX IF NOT EXISTS idx_job_skill_job ON job_skill(job_id, weight DESC);
+CREATE INDEX IF NOT EXISTS idx_experience_job ON experience_card(job_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_training_date ON training_task(plan_date, status);
 `;
 
 type SqlValue = number | string | Uint8Array | null;
@@ -251,6 +303,19 @@ ensureColumn('resume', 'parent_id', 'parent_id INTEGER');
 ensureColumn('application', 'next_action_at', 'next_action_at TEXT');
 ensureColumn('application', 'next_action_note', "next_action_note TEXT NOT NULL DEFAULT ''");
 
+/* ── 兼容旧库：补齐 P2 新增列 ─────────────────────────────── */
+ensureColumn('job', 'location', "location TEXT NOT NULL DEFAULT ''");
+ensureColumn('job', 'salary_range', "salary_range TEXT NOT NULL DEFAULT ''");
+ensureColumn('job', 'deadline', 'deadline TEXT');
+ensureColumn('job', 'priority', 'priority INTEGER NOT NULL DEFAULT 0');
+ensureColumn('job', 'source_url', "source_url TEXT NOT NULL DEFAULT ''");
+ensureColumn('job', 'status', "status TEXT NOT NULL DEFAULT 'open'");
+ensureColumn('interview_turn', 'answer_started_at', 'answer_started_at TEXT');
+ensureColumn('interview_turn', 'duration_sec', 'duration_sec INTEGER');
+ensureColumn('interview_turn', 'tags_json', 'tags_json TEXT');
+ensureColumn('interview_turn', 'skipped', 'skipped INTEGER NOT NULL DEFAULT 0');
+ensureColumn('bank_item', 'card_json', 'card_json TEXT');
+
 raw.exec(`
 CREATE INDEX IF NOT EXISTS idx_resume_parent ON resume(parent_id);
 CREATE INDEX IF NOT EXISTS idx_application_next ON application(next_action_at);
@@ -261,8 +326,18 @@ CREATE INDEX IF NOT EXISTS idx_application_next ON application(next_action_at);
 let dirty = false;
 let timer: NodeJS.Timeout | null = null;
 let writeFailed = false;
+let writing = false;
+let pendingWrite = false;
 
-function flush(): void {
+function reportWriteError(err: unknown): void {
+  if (!writeFailed) {
+    writeFailed = true;
+    console.error('[db] 数据库落盘失败（内存中继续可用）：', err instanceof Error ? err.message : err);
+  }
+}
+
+/** 同步落盘：只在进程退出时使用，保证最后一次写入不丢。 */
+function flushSync(): void {
   if (!dirty) return;
   dirty = false;
   if (timer) {
@@ -275,21 +350,55 @@ function flush(): void {
     fs.renameSync(tmp, env.dbPath);
     writeFailed = false;
   } catch (err) {
-    if (!writeFailed) {
-      writeFailed = true;
-      console.error('[db] 数据库落盘失败（内存中继续可用）：', err instanceof Error ? err.message : err);
-    }
+    reportWriteError(err);
   }
+}
+
+/**
+ * 异步落盘（PERF-11）：导出与写文件都移出请求调用栈，同一时间只允许一个写任务。
+ * 写入期间再来的变更只打标记，队列空下来后自动再写一次。
+ */
+function flushAsync(): void {
+  if (writing) {
+    pendingWrite = true;
+    return;
+  }
+  if (!dirty) return;
+  writing = true;
+  dirty = false;
+  const tmp = `${env.dbPath}.tmp`;
+  void (async () => {
+    try {
+      // 让出当前事件循环，避免和请求处理争抢 CPU
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const snapshot = Buffer.from(raw.export());
+      await fs.promises.writeFile(tmp, snapshot);
+      await fs.promises.rename(tmp, env.dbPath);
+      writeFailed = false;
+    } catch (err) {
+      reportWriteError(err);
+    } finally {
+      writing = false;
+      if (pendingWrite || dirty) {
+        pendingWrite = false;
+        scheduleFlush();
+      }
+    }
+  })();
+}
+
+function scheduleFlush(): void {
+  if (timer) return;
+  timer = setTimeout(() => {
+    timer = null;
+    flushAsync();
+  }, 150);
+  timer.unref?.();
 }
 
 function markDirty(): void {
   dirty = true;
-  if (timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    flush();
-  }, 150);
-  timer.unref?.();
+  scheduleFlush();
 }
 
 /* ── 语句包装：保持 better-sqlite3 的调用形态 ──────────────── */
@@ -367,7 +476,7 @@ export const db = {
     markDirty();
   },
   close(): void {
-    flush();
+    flushSync();
     for (const st of cache.values()) {
       try {
         st.free();

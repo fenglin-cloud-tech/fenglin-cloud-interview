@@ -7,6 +7,7 @@ import { diffLines } from '../lib/diff';
 import { downloadFrom, downloadText, openPrintView, slugDate } from '../lib/download';
 import { formatDateTime } from '../lib/format';
 import { renderMarkdown } from '../lib/markdown';
+import { ExperiencePicker } from '../components/ExperiencePicker';
 import {
   Button,
   BusyProgress,
@@ -89,6 +90,7 @@ export function Optimize() {
   const [showDiff, setShowDiff] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
   const [undoDepth, setUndoDepth] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const userTouched = useRef(false);
   const sugRunRef = useRef(0);
@@ -372,8 +374,16 @@ export function Optimize() {
     toast('已应用到当前草稿，可随时撤销', 'ok');
   };
 
-  const undoSuggestion = () => {
-    const prev = undoStack.current.pop();
+  const insertExperience = (text: string) => {
+    undoStack.current.push(draft);
+    setUndoDepth(undoStack.current.length);
+    setDraft((prev) => (prev.trim() ? `${prev}\n\n${text}` : text));
+    setShowDiff(false);
+    setTab('iterate');
+    toast('已把素材片段追加到当前草稿，可随时撤销', 'ok');
+  };
+
+  const undoSuggestion = () => {    const prev = undoStack.current.pop();
     if (prev === undefined) return;
     setDraft(prev);
     setUndoDepth(undoStack.current.length);
@@ -771,6 +781,9 @@ export function Optimize() {
                     撤销应用（{undoDepth}）
                   </Button>
                 )}
+                <Button size="sm" variant="quiet" onClick={() => setPickerOpen(true)}>
+                  素材库插入
+                </Button>
                 <Button size="sm" variant="quiet" onClick={() => setShowDiff((v) => !v)}>
                   {showDiff ? '看正文' : '对比原始'}
                 </Button>
@@ -866,6 +879,13 @@ export function Optimize() {
           </Card>
         </div>
       )}
+
+      <ExperiencePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(text) => insertExperience(text)}
+        jobId={jobId}
+      />
     </div>
   );
 }

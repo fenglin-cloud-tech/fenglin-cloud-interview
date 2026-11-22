@@ -1,7 +1,19 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { Button, Callout, Card, PageHeader } from '../components/ui';
+import { Button, Callout, Card, Modal, PageHeader } from '../components/ui';
 import { useApp } from '../state';
+
+const CLEAR_MODULES: {
+  key: 'interviews' | 'reviews' | 'bank' | 'applications';
+  label: string;
+  desc: string;
+  countKey: 'interviews' | 'reviews' | 'bankItems' | 'applications';
+}[] = [
+  { key: 'interviews', label: '模拟面试', desc: '面试记录、逐题作答与反馈、报告；投递里的面试关联一并清理。', countKey: 'interviews' },
+  { key: 'reviews', label: '复盘记录', desc: '复盘正文、复习排程；投递里的复盘关联一并清理。', countKey: 'reviews' },
+  { key: 'bank', label: '个人题库', desc: '题库题目、薄弱标记与对应复习排程。', countKey: 'bankItems' },
+  { key: 'applications', label: '投递记录', desc: '投递、阶段历史与简历/面试/复盘关联。', countKey: 'applications' },
+];
 
 const COUNT_LABEL: Record<string, string> = {
   profiles: '本地档案',
@@ -16,6 +28,9 @@ const COUNT_LABEL: Record<string, string> = {
   applications: '投递记录',
   applicationLinks: '投递关联',
   applicationStageLog: '投递阶段历史',
+  jobSkills: '岗位技能标签',
+  experienceCards: '经历素材卡',
+  trainingTasks: '训练任务',
 };
 
 const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
@@ -41,6 +56,23 @@ export function Backup() {
   const [overwriteBackedUp, setOverwriteBackedUp] = useState(false);
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState<{ mode: string; after: Record<string, number> } | null>(null);
+  const [moduleCounts, setModuleCounts] = useState<Record<string, number> | null>(null);
+  const [clearFor, setClearFor] = useState<(typeof CLEAR_MODULES)[number] | null>(null);
+  const [clearExported, setClearExported] = useState(false);
+  const [clearChecked, setClearChecked] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const loadCounts = async () => {
+    try {
+      setModuleCounts(await api.dataCounts());
+    } catch {
+      setModuleCounts(null);
+    }
+  };
+
+  useEffect(() => {
+    void loadCounts();
+  }, []);
 
   const doExport = async (): Promise<boolean> => {
     setExporting(true);
@@ -125,11 +157,32 @@ export function Backup() {
       setPreview(null);
       setParsed(null);
       await refresh();
+      await loadCounts();
       toast(r.mode === 'overwrite' ? '导入完成：已按备份覆盖当前数据' : '导入完成：已合并到当前数据', 'ok');
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : '导入失败，数据库未改动');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const doClear = async () => {
+    if (!clearFor || !clearExported || !clearChecked) return;
+    const target = clearFor;
+    setClearing(true);
+    try {
+      const r = await api.clearModule(target.key);
+      const total = Object.values(r.deleted).reduce((a, b) => a + b, 0);
+      toast(`已清理${target.label}：${total} 条记录`, 'ok');
+      setClearFor(null);
+      setClearExported(false);
+      setClearChecked(false);
+      await refresh();
+      await loadCounts();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '清理失败', 'err');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -318,6 +371,82 @@ export function Backup() {
           </div>
         </Card>
       </div>
+
+      <Card title="按模块清理" subtitle="只删选中的业务模块，不动岗位、简历、本地档案与经历素材卡">
+        <Callout tone="warn">清理不可撤销。每次清理前必须先导出当前备份，并勾选确认。</Callout>
+        <div className="stack mt-12">
+          {CLEAR_MODULES.map((m) => (
+            <div key={m.key} className="row between wrap gap-8">
+              <div>
+                <strong>{m.label}</strong>
+                <span className="muted small"> · 当前 {moduleCounts?.[m.countKey] ?? '—'} 条</span>
+                <p className="muted small" style={{ margin: '2px 0 0' }}>
+                  {m.desc}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => {
+                  setClearFor(m);
+                  setClearExported(false);
+                  setClearChecked(false);
+                }}
+              >
+                清理{m.label}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Modal
+        open={!!clearFor}
+        title={`清理${clearFor?.label || ''}`}
+        onClose={() => setClearFor(null)}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setClearFor(null)}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              loading={clearing}
+              disabled={!clearExported || !clearChecked}
+              onClick={() => void doClear()}
+            >
+              确认清理
+            </Button>
+          </>
+        }
+      >
+        <Callout tone="warn">
+          {clearFor?.desc} 清理后不可恢复；其他模块与简历、岗位、档案不会受影响。
+        </Callout>
+        <div className="row gap-8 wrap mt-12">
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={exporting}
+            onClick={() => {
+              void doExport().then((ok) => {
+                if (ok) setClearExported(true);
+              });
+            }}
+          >
+            先导出当前数据
+          </Button>
+          <label className="row gap-8">
+            <input
+              type="checkbox"
+              checked={clearChecked}
+              disabled={!clearExported}
+              onChange={(e) => setClearChecked(e.target.checked)}
+            />
+            <span className={clearExported ? '' : 'muted'}>我已下载并确认备份</span>
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }

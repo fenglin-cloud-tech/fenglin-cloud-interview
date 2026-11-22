@@ -2,21 +2,49 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useApp } from '../state';
-import type { BankItem, ReviewPlan, ReviewResult, ReviewResultRecord, ReviewTask } from '../types';
+import type { BankCard, BankItem, ReviewPlan, ReviewResult, ReviewResultRecord, ReviewTask } from '../types';
 import { formatDate, formatDateTime } from '../lib/format';
 import {
   Button,
+  BusyProgress,
   Callout,
   Card,
   Chip,
+  CopyButton,
   EmptyState,
   ErrorState,
   Field,
   Modal,
   PageHeader,
   PageSkeleton,
+  SourceBadge,
   Stat,
 } from '../components/ui';
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+function cardToText(card: BankCard): string {
+  const lines = [
+    `## 解析卡`,
+    `**考察点**：${card.summary}`,
+    '',
+    `**答题要点**`,
+    ...card.keyPoints.map((p, i) => `${i + 1}. ${p}`),
+    '',
+    `**回答框架**`,
+    ...card.framework.map((f, i) => `${i + 1}. ${f.title}：${f.detail}`),
+    '',
+    `**示例回答**`,
+    card.sample,
+    '',
+    `**常见扣分点**`,
+    ...card.pitfalls.map((p) => `- ${p}`),
+    '',
+    `**可能追问**`,
+    ...card.followups.map((p) => `- ${p}`),
+  ];
+  return lines.join('\n');
+}
 
 export function Bank() {
   const navigate = useNavigate();
@@ -42,6 +70,12 @@ export function Bank() {
   const [newCat, setNewCat] = useState('专业');
   const [newJob, setNewJob] = useState('');
   const [starting, setStarting] = useState(false);
+  const [cardFor, setCardFor] = useState<BankItem | null>(null);
+  const [card, setCard] = useState<BankCard | null>(null);
+  const [cardLoading, setCardLoading] = useState(false);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardStart, setCardStart] = useState(0);
+  const [cardError, setCardError] = useState<string | null>(null);
 
   const [plan, setPlan] = useState<ReviewPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -232,6 +266,48 @@ export function Bank() {
       toast(e instanceof ApiError ? e.message : '创建练习失败', 'err');
     } finally {
       setStarting(false);
+    }
+  };
+
+  const openCard = async (item: BankItem) => {
+    setCardFor(item);
+    setCard(null);
+    setCardError(null);
+    setCardLoading(true);
+    try {
+      const r = await api.bankCard(item.id);
+      setCard(r.card);
+    } catch (e) {
+      setCardError(e instanceof ApiError ? e.message : '解析卡读取失败');
+    } finally {
+      setCardLoading(false);
+    }
+  };
+
+  const generateCard = async () => {
+    if (!cardFor || cardBusy) return;
+    setCardBusy(true);
+    setCardStart(Date.now());
+    setCardError(null);
+    try {
+      const { jobId } = await api.generateBankCard(cardFor.id);
+      for (let i = 0; i < 120; i += 1) {
+        await sleep(1200);
+        const job = await api.bankCardJob(cardFor.id, jobId);
+        if (job.status === 'done') {
+          setCard(job.result.card);
+          return;
+        }
+        if (job.status === 'error') {
+          setCardError(job.error?.message || '解析卡生成失败');
+          return;
+        }
+      }
+      setCardError('生成仍在后台执行，请稍后重新打开解析卡查看');
+    } catch (e) {
+      setCardError(e instanceof ApiError ? e.message : '解析卡生成失败');
+    } finally {
+      setCardBusy(false);
     }
   };
 
@@ -455,6 +531,9 @@ export function Bank() {
               >
                 {b.weak ? '★' : '☆'}
               </button>
+              <button className="link-btn" onClick={() => void openCard(b)}>
+                解析卡
+              </button>
               <button className="link-btn" onClick={() => openEdit(b)}>
                 编辑
               </button>
@@ -639,6 +718,106 @@ export function Bank() {
             </select>
           </Field>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!cardFor}
+        title="题目解析卡"
+        onClose={() => setCardFor(null)}
+        wide
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setCardFor(null)}>
+              关闭
+            </Button>
+            <Button variant="ink" loading={cardBusy} onClick={() => void generateCard()}>
+              {card ? '重新生成' : '生成解析卡'}
+            </Button>
+          </>
+        }
+      >
+        {cardFor && (
+          <>
+            <div className="bank-meta">
+              <Chip tone="ink">{cardFor.category}</Chip>
+              <span className="muted small">练习 {cardFor.ask_count} 次</span>
+            </div>
+            <h3 className="sched-question">{cardFor.question}</h3>
+          </>
+        )}
+
+        {cardLoading && <PageSkeleton variant="cards" label="正在读取已保存的解析卡" />}
+        {cardError && <ErrorState message={cardError} onRetry={() => void generateCard()} />}
+        {cardBusy && <BusyProgress label="正在把题目拆成解析卡" start={cardStart} note="后台生成，通常 10-30 秒" />}
+
+        {!cardLoading && !cardBusy && !card && (
+          <Callout tone="info">还没有解析卡。生成后会保存到这道题上，之后复习可直接打开，也会随备份导出。</Callout>
+        )}
+
+        {card && (
+          <div className="stack">
+            <div className="row between wrap gap-8">
+              <SourceBadge source={card.meta?.source} note={card.meta?.note} />
+              <CopyButton text={cardToText(card)} label="复制解析卡" />
+            </div>
+
+            <div>
+              <div className="rv-label">考察点</div>
+              <p>{card.summary}</p>
+            </div>
+
+            {card.keyPoints.length > 0 && (
+              <div>
+                <div className="rv-label">答题要点</div>
+                <ol>
+                  {card.keyPoints.map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {card.framework.length > 0 && (
+              <div>
+                <div className="rv-label">回答框架</div>
+                <ol>
+                  {card.framework.map((f, i) => (
+                    <li key={i}>
+                      <strong>{f.title}</strong>：{f.detail}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {card.sample && (
+              <div>
+                <div className="rv-label">示例回答</div>
+                <p className="pre-wrap">{card.sample}</p>
+              </div>
+            )}
+
+            <div className="fb-cols">
+              <div>
+                <div className="fb-col-title warn">常见扣分点</div>
+                <ul>
+                  {card.pitfalls.map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className="fb-col-title ok">可能追问</div>
+                <ul>
+                  {card.followups.map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            {card.generatedAt && <p className="muted small">生成于 {formatDateTime(card.generatedAt)}</p>}
+          </div>
+        )}
       </Modal>
 
       <Callout tone="info">
