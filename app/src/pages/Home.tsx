@@ -6,7 +6,9 @@ import { ROUND_LABEL, formatDateTime } from '../lib/format';
 import { openPrintView } from '../lib/download';
 import { Button, Card, Chip, EmptyState, ErrorState, Modal, PageHeader, PageSkeleton, Stat } from '../components/ui';
 import { GrowthPanel } from '../components/GrowthPanel';
-import type { DemoStatus, GrowthStats } from '../types';
+import { dismissBackupReminder, getBackupReminder } from '../lib/backup-reminder';
+import { SHARE_PRIVACY_CONFIRM, buildDossierShareHtml, downloadShareHtml } from '../lib/share';
+import type { DemoStatus, GrowthStats, PlanData } from '../types';
 
 interface Dash {
   counts: {
@@ -51,6 +53,10 @@ export function Home() {
   const [demo, setDemo] = useState<DemoStatus | null>(null);
   const [demoBusy, setDemoBusy] = useState<'load' | 'clear' | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [plan, setPlan] = useState<PlanData | null>(null);
+  const [planBusyId, setPlanBusyId] = useState<number | null>(null);
+  const [backupNotice, setBackupNotice] = useState(getBackupReminder);
+  const [sharingDossier, setSharingDossier] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -76,6 +82,13 @@ export function Home() {
       .catch(() => setDemo(null));
   };
 
+  const loadPlan = () => {
+    api
+      .planToday()
+      .then(setPlan)
+      .catch(() => setPlan(null));
+  };
+
   useEffect(load, []);
 
   // 成长数据独立加载：即使失败也不影响训练台其它区域
@@ -83,11 +96,58 @@ export function Home() {
 
   useEffect(loadDemo, []);
 
+  useEffect(loadPlan, []);
+
+  const togglePlanTask = async (id: number) => {
+    if (planBusyId) return;
+    setPlanBusyId(id);
+    try {
+      const { task } = await api.completePlanTask(id);
+      setPlan((prev) =>
+        prev
+          ? {
+              ...prev,
+              done: prev.done + (task.status === 'done' ? 1 : -1),
+              days: prev.days.map((d) => ({
+                ...d,
+                done: d.tasks.reduce(
+                  (n, t) => n + (t.id === task.id ? (task.status === 'done' ? 1 : 0) : t.status === 'done' ? 1 : 0),
+                  0,
+                ),
+                tasks: d.tasks.map((t) => (t.id === task.id ? task : t)),
+              })),
+            }
+          : prev,
+      );
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '更新失败', 'err');
+    } finally {
+      setPlanBusyId(null);
+    }
+  };
+
   const afterDemoChange = async () => {
     await refresh();
     load();
     loadGrowth();
     loadDemo();
+    loadPlan();
+  };
+
+  const shareDossier = async () => {
+    if (sharingDossier) return;
+    if (!window.confirm(SHARE_PRIVACY_CONFIRM)) return;
+    setSharingDossier(true);
+    try {
+      const dossier = await api.dossier();
+      const date = new Date().toISOString().slice(0, 10);
+      downloadShareHtml(`求职档案-${date}.html`, buildDossierShareHtml(dossier));
+      toast('分享快照已生成，可离线打开', 'ok');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '生成分享快照失败', 'err');
+    } finally {
+      setSharingDossier(false);
+    }
   };
 
   const runLoadDemo = async () => {
@@ -120,6 +180,7 @@ export function Home() {
   };
 
   const counts = data?.counts;
+  const todayPlan = plan?.days.find((d) => d.isToday) || null;
   const checklist = [
     { key: 'resume', label: '有一份简历', done: (counts?.resumes ?? 0) > 0, to: '/resumes' },
     { key: 'job', label: '有目标岗位', done: (counts?.jobs ?? 0) > 0, to: '/jobs' },
@@ -162,6 +223,36 @@ export function Home() {
           )}
         </div>
       </section>
+
+      {backupNotice.show && (
+        <section className="backup-nudge">
+          <div>
+            <span className="backup-nudge-eyebrow">备份提醒</span>
+            <strong>
+              {backupNotice.reason === 'never'
+                ? `你已经做了一些修改（${backupNotice.writes} 次），但还没有导出过备份`
+                : backupNotice.reason === 'days'
+                  ? `上次备份在 ${backupNotice.daysSince} 天前`
+                  : `自上次备份后已有 ${backupNotice.writes} 次修改`}
+            </strong>
+            <p>数据只存在当前浏览器对应的本地数据库；线上实例重启或清理后会丢失，建议先导出一份 JSON 备份。</p>
+          </div>
+          <div className="row gap-8 wrap">
+            <Link to="/backup" className="btn btn-ink">
+              去备份
+            </Link>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                dismissBackupReminder();
+                setBackupNotice((prev) => ({ ...prev, show: false }));
+              }}
+            >
+              稍后提醒
+            </Button>
+          </div>
+        </section>
+      )}
 
       <section className="hero">
         <div className="hero-main">
@@ -243,6 +334,9 @@ export function Home() {
                 生成求职档案 PDF
               </Button>
               <Button onClick={() => window.open('/print/profile', '_blank', 'noopener')}>先预览</Button>
+              <Button variant="quiet" onClick={() => void shareDossier()} loading={sharingDossier}>
+                导出分享快照
+              </Button>
             </div>
           </div>
 
@@ -272,6 +366,44 @@ export function Home() {
               </ul>
             </Card>
           ) : null}
+
+          {todayPlan && (
+            <Card
+              title="今日计划"
+              subtitle={
+                todayPlan.total
+                  ? `今天 ${todayPlan.done}/${todayPlan.total} 已完成 · 本周共 ${plan?.total ?? 0} 条`
+                  : '今天暂无任务，完成一场面试报告后会自动生成'
+              }
+              extra={
+                <Link to="/plan" className="link">
+                  查看 7 天计划 →
+                </Link>
+              }
+            >
+              {todayPlan.tasks.length ? (
+                <ul className="checklist plan-home-list">
+                  {todayPlan.tasks.map((task) => (
+                    <li key={task.id} className={task.status === 'done' ? 'done' : ''}>
+                      <button
+                        type="button"
+                        className="plan-check"
+                        aria-pressed={task.status === 'done'}
+                        aria-label={task.status === 'done' ? '标记为待办' : '标记为已完成'}
+                        disabled={planBusyId === task.id}
+                        onClick={() => void togglePlanTask(task.id)}
+                      >
+                        {task.status === 'done' ? '✓' : '○'}
+                      </button>
+                      <span>{task.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted small">先完成一场模拟面试并生成报告，系统会把薄弱项拆成未来 7 天的任务。</p>
+              )}
+            </Card>
+          )}
 
           <div className="grid-2">
             <Card title="闭环清单" subtitle="按顺序点亮，任何一环没数据都会卡住下一步">

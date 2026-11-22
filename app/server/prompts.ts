@@ -1,10 +1,40 @@
 import type { ChatMsg, VisionPart } from './llm.js';
 import { FOLLOWUP_FOCUS_LABEL, roundByKey } from './interview-plan.js';
+import type { PresetKey } from './interview-plan.js';
 
 const BASE = `你是「丰麟云面」的求职教练，服务对象是中国高校正在找实习/校招的学生。
 要求：中文回答；具体、可执行；不空泛说教；不编造学生没有提供的事实；引用学生原文时要准确。`;
 
 const JSON_ONLY = `只输出一个 JSON 对象，不要输出任何解释、前言、Markdown 代码围栏或注释。`;
+
+export type InterviewLanguage = 'zh' | 'en';
+
+const BASE_EN = `You are the interview coach of "Fenglin Cloud Interview", serving Chinese university students applying for internships and campus roles.
+Requirements: answer in English; be specific and actionable; do not invent facts the candidate did not provide; quote the candidate accurately.`;
+
+const JSON_ONLY_EN = `Output only one JSON object. No explanations, preamble, Markdown fences or comments.`;
+
+/** MOD-09：按面试预设调整出题、反馈与报告的语气和侧重点。 */
+function presetRule(preset: PresetKey | undefined, en = false): string {
+  if (preset === 'hr') {
+    return en
+      ? 'Interview style: HR interview. Focus on motivation, stability, communication and teamwork; follow up on behavioral details rather than deep technical implementation.'
+      : '面试风格：HR 面。重点考察求职动机、稳定性、沟通表达与团队协作，追问偏行为细节，不要过度深挖技术实现。';
+  }
+  if (preset === 'stress') {
+    return en
+      ? 'Interview style: stress interview. Ask directly and move fast; challenge vague claims immediately. Be strict and blunt in feedback, but never personal or abusive.'
+      : '面试风格：压力面。提问更直接、节奏更快，对模糊表述立即追问；反馈要严格、直指问题，但不得人身攻击或贬低。';
+  }
+  if (preset === 'behavioral') {
+    return en
+      ? 'Interview style: behavioral interview. Every question must target a real past experience; focus on STAR actions, personal contribution and lessons learned.'
+      : '面试风格：行为面。所有问题都落到真实经历，重点追问 STAR 中的行动、个人贡献与复盘。';
+  }
+  return en
+    ? 'Interview style: standard campus interview.'
+    : '面试风格：标准校招面试，覆盖专业能力与行为面试。';
+}
 
 export function suggestionsPrompt(resumeText: string, jobTitle: string): ChatMsg[] {
   return [
@@ -165,7 +195,43 @@ export function questionPrompt(params: {
   asked: string[];
   seedQuestion?: string;
   experiences?: string;
+  language?: InterviewLanguage;
+  preset?: PresetKey;
 }): ChatMsg[] {
+  if (params.language === 'en') {
+    const round = roundByKey(params.roundKey, 'en');
+    const roundRule: Record<string, string> = {
+      intro: 'Ask the candidate to introduce themselves for the target role. Require specifics, not a generic self-introduction.',
+      professional:
+        'Ask about a concrete project, technical skill or domain ability from the resume. Name the project or skill and ask how, why, and what the result was.',
+      behavioral:
+        'Ask a behavioral question about collaboration, pressure, initiative or learning from failure. Require a real story answered with STAR.',
+      reverse:
+        'Invite the candidate to ask you (the interviewer) questions, and briefly note what a valuable question looks like. Do not invent questions for the candidate.',
+    };
+    return [
+      { role: 'system', content: `${BASE_EN}\nYou are hosting a mock interview, round ${round.numeral}: ${round.name}. ${JSON_ONLY_EN}` },
+      {
+        role: 'user',
+        content: `Target role: ${params.jobTitle || 'Not specified'}
+${params.jd ? `Job description (excerpt): ${params.jd.slice(0, 1200)}` : ''}
+
+Candidate resume:
+"""
+${params.resumeText.slice(0, 4000)}
+"""
+${params.experiences ? `\nSTAR experience notes provided by the candidate (use them to make the question concrete, do not copy them as the question):\n${params.experiences.slice(0, 1600)}\n` : ''}
+Round requirement: ${roundRule[round.key]}
+${presetRule(params.preset, true)}
+Questions already asked (do not repeat):
+${params.asked.length ? params.asked.map((q, i) => `${i + 1}. ${q}`).join('\n') : '(none)'}
+${params.seedQuestion ? `\nRewrite the following question from the candidate's own bank into a natural question for this round, keeping the assessment point:\n"${params.seedQuestion}"\n` : ''}
+
+Ask exactly ONE question, in spoken English, like a real interviewer, no more than 45 words.
+Output JSON: { "question": "question text", "focus": "what this assesses, within 6 words" }`,
+      },
+    ];
+  }
   const round = roundByKey(params.roundKey);
   const roundRule: Record<string, string> = {
     intro: '让候选人做自我介绍，要求结合目标岗位，不要泛泛而谈。',
@@ -186,6 +252,7 @@ ${params.resumeText.slice(0, 4000)}
 """
 ${params.experiences ? `\n候选人自己整理的 STAR 经历素材（可据此把问题问得更具体，不要照抄成题目）：\n${params.experiences.slice(0, 1600)}\n` : ''}
 本轮要求：${roundRule[round.key]}
+${presetRule(params.preset)}
 已经问过的问题（不要重复）：
 ${params.asked.length ? params.asked.map((q, i) => `${i + 1}. ${q}`).join('\n') : '（无）'}
 ${params.seedQuestion ? `\n请把下面这道来自候选人个人题库的题改写成本轮的自然提问，保留考察点：\n"${params.seedQuestion}"\n` : ''}
@@ -196,13 +263,148 @@ ${params.seedQuestion ? `\n请把下面这道来自候选人个人题库的题�
   ];
 }
 
+/** FUNC-14：反问轮不按 STAR 评分，改用「问题相关性 / 信息获取价值 / 岗位理解」三维。 */
+function reverseFeedbackPrompt(params: {
+  question: string;
+  answer: string;
+  jobTitle: string;
+  language?: InterviewLanguage;
+  preset?: PresetKey;
+}): ChatMsg[] {
+  if (params.language === 'en') {
+    return [
+      {
+        role: 'system',
+        content: `${BASE_EN}\nYou are a strict but friendly interviewer evaluating the candidate's reverse questions. ${JSON_ONLY_EN}`,
+      },
+      {
+        role: 'user',
+        content: `Target role: ${params.jobTitle || 'Not specified'}
+${presetRule(params.preset, true)}
+
+The interviewer invited questions. Candidate's reverse questions:
+"""
+${params.answer}
+"""
+
+Evaluate with this reverse-question rubric (map to the fixed JSON keys):
+- structure -> relevance (0-100): are the questions about this role, team, product or growth? Do they avoid information available on the homepage?
+- content -> information value (0-100): would the answers actually help the candidate decide or prepare? Are the questions specific and open-ended?
+- expression -> role understanding (0-100): do the questions show understanding of the role's responsibilities and business, and are they phrased politely and concisely?
+
+Bands: 90-100 sharp, specific and clearly role-related; 75-89 relevant but partly generic; 60-74 broad or mostly answerable from the JD; 40-59 low-value or off-topic; 0-39 absent or inappropriate (e.g. only salary/overtime before any role question).
+Rules:
+- If the candidate asks no question or fewer than 2 questions, no dimension may exceed 60.
+- Do not reward flattery or questions that only seek reassurance.
+- strengths: what the questions did well (quote them).
+- issues: what to replace or add.
+- improvedAnswer: 2-3 rewritten reverse questions in English, specific to the role, no fabricated facts.
+- followup: always null for this round.
+
+Output one JSON object only:
+{ "scores": { "structure": int, "content": int, "expression": int }, "summary": "...", "strengths": ["..."], "issues": ["..."], "improvedAnswer": "...", "followup": null }`,
+      },
+    ];
+  }
+  return [
+    {
+      role: 'system',
+      content: `${BASE}\n你是严格但友善的面试官，评估候选人的反问环节。${JSON_ONLY}`,
+    },
+    {
+      role: 'user',
+      content: `目标岗位：${params.jobTitle || '未指定'}
+${presetRule(params.preset)}
+
+面试官已邀请候选人提问。候选人的反问：
+"""
+${params.answer}
+"""
+
+请按反问专用标准评估（映射到固定的三个 JSON 字段）：
+- structure → 问题相关性（0-100）：是否围绕这个岗位、团队、产品或成长？是否问了官网/JD 就能查到的信息？
+- content → 信息获取价值（0-100）：答案是否能帮候选人做判断或准备？问题是否具体、开放？
+- expression → 岗位理解（0-100）：是否体现对岗位职责与业务的理解？表达是否得体、简洁？
+
+评分档位：90-100 精准且明显与岗位相关；75-89 相关但部分泛泛；60-74 宽泛或基本能在 JD 里找到答案；40-59 价值低或跑题；0-39 没有提问或明显不合适（如一上来只问薪资/加班）。
+硬性规则：
+- 没有提问或有效问题少于 2 个时，三个维度都不得高于 60；
+- 不奖励恭维式提问或只求安慰的问题；
+- strengths：做得好的地方（引用原句）；
+- issues：应替换或补充什么；
+- improvedAnswer：给 2-3 个改写后的反问，具体到岗位，不得编造事实；
+- followup：反问轮固定为 null。
+
+只输出一个 JSON 对象：
+{ "scores": { "structure": 整数, "content": 整数, "expression": 整数 }, "summary": "...", "strengths": ["..."], "issues": ["..."], "improvedAnswer": "...", "followup": null }`,
+    },
+  ];
+}
+
 export function feedbackPrompt(params: {
   roundKey: string;
   question: string;
   answer: string;
   jobTitle: string;
   depth: number;
+  language?: InterviewLanguage;
+  preset?: PresetKey;
 }): ChatMsg[] {
+  if (params.roundKey === 'reverse') return reverseFeedbackPrompt(params);
+  if (params.language === 'en') {
+    const round = roundByKey(params.roundKey, 'en');
+    return [
+      {
+        role: 'system',
+        content: `${BASE_EN}\nYou are a strict but friendly interviewer. Score the answer on three dimensions and give an improved version the candidate can reuse. ${JSON_ONLY_EN}`,
+      },
+      {
+        role: 'user',
+        content: `Target role: ${params.jobTitle || 'Not specified'}
+Round: ${round.name}
+${presetRule(params.preset, true)}
+${params.depth > 0 ? `This is follow-up level ${params.depth}.` : ''}
+
+Interview question: ${params.question}
+
+Candidate answer:
+"""
+${params.answer}
+"""
+
+Evaluate:
+- structure (0-100): clear layers; behavioral answers should use STAR (Situation-Task-Action-Result).
+- content (0-100): concrete facts, numbers, personal contribution, relevance.
+- expression (0-100): rambling, filler words, jumps in logic, poor time allocation.
+
+Use evidence-based bands; do not default to the middle:
+- 90-100: complete STAR, quantified results, clear ownership, hits the core of the question.
+- 75-89: mostly complete with concrete facts, but missing one of data, ownership or structure.
+- 60-74: understandable but clearly lacks structure, data or personal contribution.
+- 40-59: only one or two conclusions, no factual support.
+- 0-39: off-topic, evasive, or almost no answer.
+Hard rules:
+- If the answer is under 40 words, or has no concrete facts, no dimension may exceed 60.
+- The three dimensions must differ: structure judges layering, content judges facts/data, expression judges verbosity and filler.
+
+Also provide:
+- strengths: 1-2 specific things done well (quote the answer).
+- issues: 1-3 must-fix problems (quote the answer).
+- improvedAnswer: an 80-150 word first-person rewrite, keeping the candidate's facts, inventing no new data (use "to be added: xx" for missing numbers).
+- followup: if ANY dimension is below 75, provide exactly 1 follow-up (focus must be project_detail / data_source / personal_contribution); otherwise null.
+
+Output one JSON object with only these fields (integer scores 0-100, not strings):
+{
+  "scores": { "structure": int, "content": int, "expression": int },
+  "summary": "one-sentence overall comment",
+  "strengths": ["..."],
+  "issues": ["..."],
+  "improvedAnswer": "...",
+  "followup": { "question": "...", "focus": "project_detail" } or null
+}`,
+      },
+    ];
+  }
   const round = roundByKey(params.roundKey);
   return [
     {
@@ -213,6 +415,7 @@ export function feedbackPrompt(params: {
       role: 'user',
       content: `目标岗位：${params.jobTitle || '未指定'}
 当前轮次：${round.name}
+${presetRule(params.preset)}
 ${params.depth > 0 ? `这是第 ${params.depth} 层追问。` : ''}
 
 面试问题：${params.question}
@@ -259,7 +462,38 @@ ${params.answer}
 export function reportPrompt(params: {
   jobTitle: string;
   turns: { round: string; question: string; answer: string; score: number | null; depth: number }[];
+  language?: InterviewLanguage;
+  preset?: PresetKey;
 }): ChatMsg[] {
+  if (params.language === 'en') {
+    const lines = params.turns
+      .map(
+        (t, i) =>
+          `${i + 1}. [${t.round}${t.depth ? ` · follow-up ${t.depth}` : ''}] Q: ${t.question}\n   A: ${t.answer.slice(0, 600)}`,
+      )
+      .join('\n');
+    return [
+      { role: 'system', content: `${BASE_EN}\nYou write the debrief report after a mock interview. ${JSON_ONLY_EN}` },
+      {
+        role: 'user',
+        content: `Target role: ${params.jobTitle || 'Not specified'}
+${presetRule(params.preset, true)}
+
+Full interview transcript:
+${lines}
+
+Produce the report in English:
+- overallScore: integer 0-100 for the whole interview. Base it on the average of per-question scores, then adjust slightly for round coverage and weaknesses. Do not output a fixed score.
+- roundScores: score and one-sentence comment per round (use English round names: Self-introduction / Professional / Behavioral / Reverse questions; only include rounds that actually happened)
+- weaknesses: 3-5 specific weak points (e.g. "only described what was built, never the result or data")
+- reviewPoints: 4-6 actionable review items
+- summary: 2-3 sentences of overall feedback and next steps
+
+Output exactly this JSON (the 0 is a placeholder; recompute from the actual transcript, do not copy):
+{ "overallScore": 0, "roundScores": [{"round":"Self-introduction","score":0,"comment":"..."}], "weaknesses": ["..."], "reviewPoints": ["..."], "summary": "..." }`,
+      },
+    ];
+  }
   const lines = params.turns
     .map((t, i) => `${i + 1}. [${t.round}${t.depth ? `·追问${t.depth}` : ''}] 问：${t.question}\n   答：${t.answer.slice(0, 500)}`)
     .join('\n');
@@ -268,6 +502,7 @@ export function reportPrompt(params: {
     {
       role: 'user',
       content: `目标岗位：${params.jobTitle || '未指定'}
+${presetRule(params.preset)}
 
 整场问答记录：
 ${lines}

@@ -123,7 +123,10 @@ export function localFeedback(params: {
   roundKey: string;
   question: string;
   answer: string;
+  language?: 'zh' | 'en';
 }): FeedbackResult {
+  if (params.roundKey === 'reverse') return localReverseFeedback(params);
+  if (params.language === 'en') return localFeedbackEn(params);
   const answer = params.answer.trim();
   const round = roundByKey(params.roundKey);
   const len = answer.length;
@@ -193,12 +196,143 @@ const BEHAVIOR_POOL = [
   '同时有多个截止时间时，你怎么安排优先级？',
 ];
 
+const BEHAVIOR_POOL_EN = [
+  'Tell me about a time you disagreed with a teammate. How did you resolve it?',
+  'Describe something you proactively pushed forward even though nobody supported it at first.',
+  'Tell me about a failure or a project that went wrong. What did you change afterwards?',
+  'How do you prioritise when several deadlines collide?',
+];
+
+/** FUNC-14：反问轮本地降级也按「相关性 / 信息价值 / 岗位理解」评估，不套 STAR。 */
+function localReverseFeedback(params: {
+  question: string;
+  answer: string;
+  language?: 'zh' | 'en';
+}): FeedbackResult {
+  const en = params.language === 'en';
+  const answer = params.answer.trim();
+  const len = en ? answer.split(/\s+/).filter(Boolean).length : answer.replace(/\s/g, '').length;
+  const issues: string[] = [];
+  const strengths: string[] = [];
+
+  let relevance = 62;
+  if (/(团队|业务|成长|岗位|职责|技术栈|培养|晋升|team|product|growth|role|responsibility|mentor|tech stack)/i.test(answer)) {
+    relevance += 16;
+    strengths.push(en ? 'Your questions target the role, team or growth rather than generic benefits.' : '问题围绕岗位、团队或成长，方向是对的。');
+  } else {
+    issues.push(en ? 'Questions are not clearly tied to this role. Ask about the team, the product or the first-six-month expectations.' : '问题和这个岗位关系不直接，建议问团队、业务或入职前六个月的目标。');
+  }
+  if (/(薪资|加班|福利|salary|overtime|welfare|bonus)/i.test(answer) && len < (en ? 30 : 40)) {
+    relevance -= 14;
+    issues.push(en ? 'Opening with salary or overtime before any role question weakens the impression.' : '一上来只问薪资/加班，会削弱印象分。');
+  }
+  relevance = Math.max(30, Math.min(90, relevance));
+
+  let info = 58;
+  const questionMarks = (answer.match(/[?？]/g) || []).length;
+  if (questionMarks >= 2) {
+    info += 14;
+    strengths.push(en ? 'You asked multiple open questions instead of one closed question.' : '提了多个开放问题，而不是只问一个是非题。');
+  } else {
+    issues.push(en ? 'Add one or two follow-up questions so the answer gives you decision-useful information.' : '再补 1-2 个追问，让回答能帮你做判断。');
+  }
+  if (len >= (en ? 20 : 25) && len <= (en ? 220 : 240)) info += 8;
+  if (len < (en ? 8 : 10)) info -= 22;
+  info = Math.max(30, Math.min(90, info));
+
+  let role = 60;
+  if (/(业务|产品|岗位|团队|技术|business|product|role|team|tech)/i.test(answer)) {
+    role += 14;
+    strengths.push(en ? 'The questions show you understand the role context.' : '问题体现了你对岗位 context 的理解。');
+  } else {
+    issues.push(en ? 'Show more role understanding: ask how the team measures success or what the biggest challenge is.' : '可以再体现岗位理解，例如问团队如何衡量成功、当前最大的挑战。');
+  }
+  role = Math.max(30, Math.min(90, role));
+
+  return {
+    scores: { structure: relevance, content: info, expression: role },
+    summary: en
+      ? 'Local rubric: reverse questions are scored on relevance, information value and role understanding, not STAR.'
+      : '本地规则：反问轮按问题相关性 / 信息获取价值 / 岗位理解评估，不套用 STAR。',
+    strengths: strengths.length ? strengths.slice(0, 3) : [en ? 'You did ask questions, which is better than skipping the round.' : '你完成了提问，比直接放弃反问环节要好。'],
+    issues: issues.length ? issues.slice(0, 3) : [en ? 'Pick one question and make it more specific to this team.' : '挑一个问题再具体到这支团队，会更有价值。'],
+    improvedAnswer: '',
+    followup: null,
+  };
+}
+
+function localFeedbackEn(params: { roundKey: string; question: string; answer: string }): FeedbackResult {  const answer = params.answer.trim();
+  const words = answer.split(/\s+/).filter(Boolean).length;
+  const round = roundByKey(params.roundKey, 'en');
+  const issues: string[] = [];
+  const strengths: string[] = [];
+
+  const starHits = countMatches(
+    answer,
+    /(situation|context|task|goal|I led|I built|I designed|I implemented|as a result|resulted in|improved|reduced)/gi,
+  );
+  const numbered = /(^|\n)\s*(\d+[.)]|first|second|third|finally)/i.test(answer);
+  const hasNumber = /\d+(\.\d+)?\s*(%|percent|k|m|ms|s|x|times|users|people|days|hours)?/i.test(answer);
+  const filler = countMatches(answer, /\b(um|uh|like|you know|actually|basically|sort of)\b/gi);
+
+  let structure = 58;
+  if (numbered) structure += 12;
+  if (starHits >= 4) structure += 14;
+  else if (starHits >= 2) structure += 7;
+  else issues.push('The answer lacks a Situation-Task-Action-Result structure, so the interviewer has to guess the flow.');
+  if (words < 40) {
+    structure -= 8;
+    issues.push(`The answer is only ${words} words. Expand it to at least 80 words with concrete detail.`);
+  }
+  structure = Math.max(30, Math.min(92, structure));
+
+  let content = 52;
+  if (hasNumber) {
+    content += 20;
+    strengths.push('You used concrete numbers or scale, which makes the answer more credible.');
+  } else {
+    issues.push('No data or scale appears. Add how many users, how much faster, or how large the impact was.');
+  }
+  if (/\bI\s+(led|built|designed|implemented|owned|drove|delivered)\b/i.test(answer)) {
+    content += 12;
+    strengths.push('You clearly stated your own actions and contribution.');
+  } else {
+    issues.push('You mostly say "we" without your personal contribution, which invites follow-up questions.');
+  }
+  if (words >= 80 && words <= 300) content += 8;
+  if (words > 450) {
+    content -= 8;
+    issues.push('The answer is over 450 words and loses focus for a live interview.');
+  }
+  content = Math.max(30, Math.min(92, content));
+
+  let expression = 80;
+  expression -= Math.min(24, filler * 6);
+  if (filler >= 3) issues.push(`Filler words (um / like / actually) appear ${filler} times. Replace them with short pauses.`);
+  const sentences = answer.split(/[.!?\n]/).filter((s) => s.trim().length > 0);
+  if (sentences.length >= 2 && sentences.length <= 10) expression += 6;
+  if (words < 30) expression -= 10;
+  expression = Math.max(30, Math.min(95, expression));
+
+  if (!strengths.length) strengths.push('The answer stays on topic and addresses the question directly.');
+
+  return {
+    scores: { structure, content, expression },
+    summary: `Local rubric (no model call): ${round.name} round, ${words} words. Scores follow the same STAR / evidence / clarity rules.`,
+    strengths,
+    issues: issues.length ? issues.slice(0, 4) : ['The structure is complete; add one result metric to make it stronger.'],
+    improvedAnswer: '',
+    followup: null,
+  };
+}
+
 export function localQuestion(params: {
   roundKey: string;
   resumeText: string;
   jobTitle: string;
   asked: string[];
   seedQuestion?: string;
+  language?: 'zh' | 'en';
 }): { question: string; focus: string } {
   if (params.seedQuestion) return { question: params.seedQuestion, focus: '题库抽题' };
   const job = params.jobTitle || '这个岗位';
@@ -206,8 +340,39 @@ export function localQuestion(params: {
   const projLines = params.resumeText
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => /项目|系统|平台|小程序|App|实验|竞赛/.test(l) && l.length > 6);
+    .filter((l) => /项目|系统|平台|小程序|App|实验|竞赛|project|system|platform|app|experiment|competition/i.test(l) && l.length > 6);
   const projName = (projLines[asked % Math.max(1, projLines.length)] || '你简历里的项目').replace(/^[-·•\d.\s]+/, '').slice(0, 40);
+
+  if (params.language === 'en') {
+    const target = params.jobTitle || 'this role';
+    const project = (projLines[asked % Math.max(1, projLines.length)] || 'a project on your resume')
+      .replace(/^[-·•\d.\s]+/, '')
+      .slice(0, 50);
+    switch (params.roundKey) {
+      case 'intro':
+        return {
+          question: `Please introduce yourself in about one minute. Focus on why you are applying for ${target} and the experience that best represents your ability.`,
+          focus: 'Self-positioning',
+        };
+      case 'professional': {
+        const pool = [
+          `Which part of "${project}" did you personally own? Why did you design it that way, and what alternatives did you consider?`,
+          `What was the hardest technical or business problem in "${project}"? How did you solve it?`,
+          `If you rebuilt "${project}" from scratch, what three things would you change?`,
+          `For ${target}, what is the capability you most lack right now, and how do you plan to close the gap?`,
+        ];
+        return { question: pool[asked % pool.length], focus: 'Project detail' };
+      }
+      case 'behavioral':
+        return { question: BEHAVIOR_POOL_EN[asked % BEHAVIOR_POOL_EN.length], focus: 'Behavioral' };
+      default:
+        return {
+          question:
+            'That is the end of my questions. What would you like to ask me? Team, product or growth questions are usually stronger than salary or overtime.',
+          focus: 'Reverse question',
+        };
+    }
+  }
 
   switch (params.roundKey) {
     case 'intro':

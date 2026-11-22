@@ -17,6 +17,8 @@ const Jobs = lazy(() => import('./pages/Jobs').then((m) => ({ default: m.Jobs })
 const JobSkills = lazy(() => import('./pages/JobSkills').then((m) => ({ default: m.JobSkills })));
 const Optimize = lazy(() => import('./pages/Optimize').then((m) => ({ default: m.Optimize })));
 const Interviews = lazy(() => import('./pages/Interviews').then((m) => ({ default: m.Interviews })));
+const Plan = lazy(() => import('./pages/Plan').then((m) => ({ default: m.Plan })));
+const Weekly = lazy(() => import('./pages/Weekly').then((m) => ({ default: m.Weekly })));
 const Pitch = lazy(() => import('./pages/Pitch').then((m) => ({ default: m.Pitch })));
 const InterviewSession = lazy(() =>
   import('./pages/InterviewSession').then((m) => ({ default: m.InterviewSession })),
@@ -35,6 +37,7 @@ const PrintProfile = lazy(() => import('./pages/PrintProfile').then((m) => ({ de
 const PrintInterview = lazy(() =>
   import('./pages/PrintInterview').then((m) => ({ default: m.PrintInterview })),
 );
+const PrintWeekly = lazy(() => import('./pages/PrintWeekly').then((m) => ({ default: m.PrintWeekly })));
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 export function App() {
@@ -54,6 +57,7 @@ export function App() {
               <Route path="print/reviews" element={<PrintReviews />} />
               <Route path="print/profile" element={<PrintProfile />} />
               <Route path="print/interview/:id" element={<PrintInterview />} />
+              <Route path="print/weekly" element={<PrintWeekly />} />
               <Route element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route path="templates" element={<Templates />} />
@@ -66,6 +70,8 @@ export function App() {
                 <Route path="jobs/:id/skills" element={<JobSkills />} />
                 <Route path="optimize" element={<Optimize />} />
                 <Route path="interviews" element={<Interviews />} />
+                <Route path="plan" element={<Plan />} />
+                <Route path="weekly" element={<Weekly />} />
                 <Route path="pitch" element={<Pitch />} />
                 <Route path="interviews/:id/session" element={<InterviewSession />} />
                 <Route path="interviews/:id/report" element={<InterviewReport />} />

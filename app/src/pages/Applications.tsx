@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../api';
 import { Button, Callout, Card, Chip, EmptyState, Field, Modal, PageHeader, PageSkeleton } from '../components/ui';
 import { useApp } from '../state';
-import type { ApplicationRecord, ApplicationStage } from '../types';
+import type { ApplicationCalendar, ApplicationCalendarEvent, ApplicationRecord, ApplicationStage } from '../types';
 
 const STAGES: { key: ApplicationStage; label: string; tone: 'default' | 'red' | 'green' | 'amber' | 'ink' | 'blue' }[] = [
   { key: 'applied', label: '已投递', tone: 'blue' },
@@ -37,6 +37,39 @@ function fmtDateTime(iso?: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false });
 }
 
+function monthRange(month: string): { from: string; to: string } {
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(y, m, 0);
+  return { from: `${month}-01`, to: `${month}-${String(last.getDate()).padStart(2, '0')}` };
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthCells(month: string): { date: string; inMonth: boolean }[] {
+  const [y, m] = month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const offset = (first.getDay() + 6) % 7;
+  const start = new Date(y, m - 1, 1 - offset);
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const date = d.toLocaleDateString('sv-SE');
+    return { date, inMonth: date.startsWith(month) };
+  });
+}
+
+function eventLabel(e: ApplicationCalendarEvent): string {
+  if (e.type === 'applied') return `投递 · ${e.company || e.title || ''}`;
+  if (e.type === 'followup') return `跟进 · ${e.company || e.title || ''}`;
+  if (e.type === 'deadline') return `截止 · ${e.title || '目标岗位'}`;
+  const to = e.toStage ? STAGE_MAP[e.toStage]?.label || e.toStage : '阶段变化';
+  const from = e.fromStage ? `${STAGE_MAP[e.fromStage]?.label || e.fromStage} → ` : '';
+  return `${from}${to} · ${e.company || e.title || ''}`;
+}
+
 function emptyForm() {
   return {
     company: '',
@@ -67,6 +100,13 @@ export function Applications() {
   const [linkKeyword, setLinkKeyword] = useState('');
   const [sameJobOnly, setSameJobOnly] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<ApplicationRecord | null>(null);
+  const [view, setView] = useState<'list' | 'board' | 'calendar'>('list');
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [calendar, setCalendar] = useState<ApplicationCalendar | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -83,6 +123,18 @@ export function Applications() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (view !== 'calendar') return;
+    const range = monthRange(month);
+    setCalendarLoading(true);
+    api
+      .applicationCalendar(range.from, range.to)
+      .then(setCalendar)
+      .catch((e) => toast(e instanceof ApiError ? e.message : '日历加载失败', 'err'))
+      .finally(() => setCalendarLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, month, apps]);
 
   const loadDetail = async (id: number) => {
     try {
@@ -120,6 +172,23 @@ export function Applications() {
 
   const filtered = filter === 'all' ? apps : apps.filter((a) => a.stage === filter);
   const countOf = (s: ApplicationStage) => apps.filter((a) => a.stage === s).length;
+
+  const todayStr = today();
+  const todayFollowUps = apps.filter(
+    (a) =>
+      a.nextActionAt &&
+      a.nextActionAt <= todayStr &&
+      !['offer', 'rejected', 'withdrawn'].includes(a.stage),
+  );
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, ApplicationCalendarEvent[]>();
+    for (const e of calendar?.events || []) {
+      const list = map.get(e.date) || [];
+      list.push(e);
+      map.set(e.date, list);
+    }
+    return map;
+  }, [calendar]);
 
   const openCreate = () => {
     setEditing(null);
@@ -296,27 +365,57 @@ export function Applications() {
       </div>
 
       <div className="app-toolbar">
-        <div className="app-filters" role="group" aria-label="按阶段筛选投递">
-          <button
-            className={`app-filter ${filter === 'all' ? 'on' : ''}`}
-            aria-pressed={filter === 'all'}
-            onClick={() => setFilter('all')}
-          >
-            全部 <b>{apps.length}</b>
+        <div className="seg seg-wrap" role="group" aria-label="投递视图">
+          <button className={view === 'list' ? 'on' : ''} aria-pressed={view === 'list'} onClick={() => setView('list')}>
+            列表
           </button>
-          {STAGES.map((s) => (
-            <button
-              key={s.key}
-              className={`app-filter ${filter === s.key ? 'on' : ''}`}
-              aria-pressed={filter === s.key}
-              onClick={() => setFilter(s.key)}
-            >
-              {s.label} <b>{countOf(s.key)}</b>
-            </button>
-          ))}
+          <button className={view === 'board' ? 'on' : ''} aria-pressed={view === 'board'} onClick={() => setView('board')}>
+            看板
+          </button>
+          <button className={view === 'calendar' ? 'on' : ''} aria-pressed={view === 'calendar'} onClick={() => setView('calendar')}>
+            日历
+          </button>
         </div>
+        {view === 'list' && (
+          <div className="app-filters" role="group" aria-label="按阶段筛选投递">
+            <button
+              className={`app-filter ${filter === 'all' ? 'on' : ''}`}
+              aria-pressed={filter === 'all'}
+              onClick={() => setFilter('all')}
+            >
+              全部 <b>{apps.length}</b>
+            </button>
+            {STAGES.map((s) => (
+              <button
+                key={s.key}
+                className={`app-filter ${filter === s.key ? 'on' : ''}`}
+                aria-pressed={filter === s.key}
+                onClick={() => setFilter(s.key)}
+              >
+                {s.label} <b>{countOf(s.key)}</b>
+              </button>
+            ))}
+          </div>
+        )}
         <Button onClick={openCreate}>新增投递</Button>
       </div>
+
+      {todayFollowUps.length > 0 && (
+        <div className="app-today">
+          <div className="app-today-head">
+            <strong>今日需跟进 {todayFollowUps.length} 条</strong>
+            <span className="muted small">来自投递记录的下次跟进日期，逾期也会显示</span>
+          </div>
+          <div className="row gap-8 wrap">
+            {todayFollowUps.map((a) => (
+              <button key={a.id} type="button" className="app-today-chip" onClick={() => void loadDetail(a.id)}>
+                {a.company} · {a.title}
+                <span>{a.nextActionAt}{a.nextActionNote ? ` · ${a.nextActionNote}` : ''}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
         </>
       )}
 
@@ -332,6 +431,87 @@ export function Applications() {
             action={<Button onClick={openCreate}>新增第一条投递</Button>}
           />
         </Card>
+      ) : view === 'calendar' ? (
+        <Card
+          className="app-calendar-card"
+          title={`${month.replace('-', ' 年 ')} 月`}
+          subtitle="投递、跟进、岗位截止与阶段变化都在同一张日历上"
+          extra={
+            <div className="row gap-8">
+              <Button size="sm" variant="quiet" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+                ‹ 上月
+              </Button>
+              <Button
+                size="sm"
+                variant="quiet"
+                onClick={() => {
+                  const d = new Date();
+                  setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                }}
+              >
+                本月
+              </Button>
+              <Button size="sm" variant="quiet" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+                下月 ›
+              </Button>
+            </div>
+          }
+        >
+          {calendarLoading && <PageSkeleton variant="cards" label="正在读取日历" />}
+          <div className="app-calendar" role="grid" aria-label="投递日历">
+            {['一', '二', '三', '四', '五', '六', '日'].map((w) => (
+              <div key={w} className="app-cal-week">
+                周{w}
+              </div>
+            ))}
+            {monthCells(month).map((cell) => {
+              const events = cell.inMonth ? eventsByDate.get(cell.date) || [] : [];
+              return (
+                <div
+                  key={cell.date}
+                  className={`app-cal-cell${cell.inMonth ? '' : ' out'}${cell.date === todayStr ? ' today' : ''}`}
+                >
+                  <div className="app-cal-date">{cell.date.slice(8)}</div>
+                  {events.slice(0, 3).map((e, i) => (
+                    <button
+                      key={`${e.type}-${e.applicationId ?? e.jobId}-${i}`}
+                      type="button"
+                      className={`app-cal-event ${e.type}`}
+                      title={eventLabel(e)}
+                      onClick={() => e.applicationId && void loadDetail(e.applicationId)}
+                    >
+                      {eventLabel(e)}
+                    </button>
+                  ))}
+                  {events.length > 3 && <span className="app-cal-more">+{events.length - 3}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : view === 'board' ? (
+        <div className="app-board">
+          {STAGES.map((s) => {
+            const list = apps.filter((a) => a.stage === s.key);
+            return (
+              <div className="app-board-col" key={s.key}>
+                <div className="app-board-head">
+                  <span>{s.label}</span>
+                  <b>{list.length}</b>
+                </div>
+                {list.map((a) => (
+                  <button key={a.id} type="button" className="app-board-card" onClick={() => void loadDetail(a.id)}>
+                    <strong>{a.company}</strong>
+                    <span>{a.title}</span>
+                    <em>投递 {fmtDate(a.appliedOn)}</em>
+                    {a.nextActionAt && <em className="app-board-next">跟进 {a.nextActionAt}</em>}
+                  </button>
+                ))}
+                {list.length === 0 && <p className="muted small app-board-empty">暂无</p>}
+              </div>
+            );
+          })}
+        </div>
       ) : filtered.length === 0 ? (
         <Card>
           <EmptyState

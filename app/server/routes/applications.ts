@@ -162,6 +162,130 @@ applicationsRouter.get(
   }),
 );
 
+applicationsRouter.get('/applications/calendar', (req, res) => {
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  const now = new Date();
+  const defFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const defTo = `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+  const from = String(req.query.from || defFrom);
+  const to = String(req.query.to || defTo);
+  if (!dateRe.test(from) || !dateRe.test(to) || from > to) {
+    throw new HttpError(400, '日期范围不正确，格式应为 YYYY-MM-DD');
+  }
+
+  type Event = {
+    date: string;
+    type: 'applied' | 'followup' | 'deadline' | 'stage';
+    applicationId?: number;
+    jobId?: number;
+    company?: string;
+    title?: string;
+    stage?: Stage;
+    fromStage?: Stage | null;
+    toStage?: Stage;
+    note?: string;
+  };
+  const events: Event[] = [];
+
+  const applied = db
+    .prepare('SELECT id, company, title, stage, applied_on FROM application WHERE applied_on BETWEEN ? AND ?')
+    .all(from, to) as { id: number; company: string; title: string; stage: Stage; applied_on: string }[];
+  for (const a of applied) {
+    events.push({
+      date: a.applied_on,
+      type: 'applied',
+      applicationId: a.id,
+      company: a.company,
+      title: a.title,
+      stage: a.stage,
+    });
+  }
+
+  const followups = db
+    .prepare(
+      `SELECT id, company, title, stage, next_action_at, next_action_note FROM application
+       WHERE next_action_at IS NOT NULL AND next_action_at BETWEEN ? AND ?
+         AND stage NOT IN ('offer', 'rejected', 'withdrawn')`,
+    )
+    .all(from, to) as {
+    id: number;
+    company: string;
+    title: string;
+    stage: Stage;
+    next_action_at: string;
+    next_action_note: string;
+  }[];
+  for (const a of followups) {
+    events.push({
+      date: a.next_action_at,
+      type: 'followup',
+      applicationId: a.id,
+      company: a.company,
+      title: a.title,
+      stage: a.stage,
+      note: a.next_action_note,
+    });
+  }
+
+  const deadlines = db
+    .prepare(
+      `SELECT j.id, j.title, j.company, j.deadline, MIN(a.id) AS application_id
+       FROM job j JOIN application a ON a.job_id = j.id
+       WHERE j.deadline IS NOT NULL AND j.deadline BETWEEN ? AND ?
+       GROUP BY j.id, j.title, j.company, j.deadline`,
+    )
+    .all(from, to) as {
+    id: number;
+    title: string;
+    company: string;
+    deadline: string;
+    application_id: number;
+  }[];
+  for (const j of deadlines) {
+    events.push({
+      date: j.deadline,
+      type: 'deadline',
+      jobId: j.id,
+      applicationId: j.application_id,
+      company: j.company,
+      title: j.title,
+    });
+  }
+
+  const logs = db
+    .prepare(
+      `SELECT l.application_id, l.from_stage, l.to_stage, l.note, l.changed_at,
+              a.company, a.title
+       FROM application_stage_log l JOIN application a ON a.id = l.application_id
+       WHERE substr(l.changed_at, 1, 10) BETWEEN ? AND ?`,
+    )
+    .all(from, to) as {
+    application_id: number;
+    from_stage: Stage | null;
+    to_stage: Stage;
+    note: string;
+    changed_at: string;
+    company: string;
+    title: string;
+  }[];
+  for (const l of logs) {
+    events.push({
+      date: l.changed_at.slice(0, 10),
+      type: 'stage',
+      applicationId: l.application_id,
+      company: l.company,
+      title: l.title,
+      fromStage: l.from_stage,
+      toStage: l.to_stage,
+      note: l.note,
+    });
+  }
+
+  events.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+  res.json({ from, to, events });
+});
+
 applicationsRouter.get(
   '/applications/:id',
   ah(async (req, res) => {

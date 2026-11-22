@@ -49,3 +49,10 @@ export const ROUND_LABEL: Record<string, string> = {
   reverse: '反问环节',
   practice: '题库再练',
 };
+
+export const PRESET_LABEL: Record<string, string> = {
+  standard: '标准面',
+  hr: 'HR 面',
+  stress: '压力面',
+  behavioral: '行为面',
+};

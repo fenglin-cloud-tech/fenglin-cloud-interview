@@ -18,6 +18,8 @@ import { trainingRouter } from './routes/training.js';
 import { pitchRouter } from './routes/pitch.js';
 import { bankCardRouter } from './routes/bank-card.js';
 import { maintenanceRouter } from './routes/maintenance.js';
+import { planRouter } from './routes/plan.js';
+import { reportsRouter } from './routes/reports.js';
 import { backfillTurnTags } from './tags.js';
 
 const app = express();
@@ -99,6 +101,8 @@ app.use('/api', trainingRouter);
 app.use('/api', pitchRouter);
 app.use('/api', bankCardRouter);
 app.use('/api', maintenanceRouter);
+app.use('/api', planRouter);
+app.use('/api', reportsRouter);
 
 // DATA-04：旧库回填薄弱标签；失败不影响启动。
 try {

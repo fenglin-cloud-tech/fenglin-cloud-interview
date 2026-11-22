@@ -51,6 +51,7 @@ const NAV = [
     group: '面试',
     items: [
       { to: '/interviews', label: '模拟面试', icon: 'mic' },
+      { to: '/plan', label: '7 天计划', icon: 'target' },
       { to: '/pitch', label: '自我介绍', icon: 'wand' },
       { to: '/reviews', label: '复盘记录', icon: 'notebook' },
       { to: '/bank', label: '个人题库', icon: 'library' },
@@ -59,6 +60,7 @@ const NAV = [
   {
     group: '其他',
     items: [
+      { to: '/weekly', label: '求职周报', icon: 'notebook' },
       { to: '/profile', label: '本地档案', icon: 'user' },
       { to: '/backup', label: '数据备份', icon: 'shield' },
       { to: '/privacy', label: '隐私说明', icon: 'shield' },
@@ -302,6 +304,8 @@ function pathLabel(path: string): string {
     ['/jobs', '目标岗位'],
     ['/optimize', '简历优化'],
     ['/interviews', '模拟面试'],
+    ['/plan', '7 天计划'],
+    ['/weekly', '求职周报'],
     ['/pitch', '自我介绍'],
     ['/reviews', '复盘记录'],
     ['/bank', '个人题库'],

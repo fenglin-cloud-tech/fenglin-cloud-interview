@@ -5,7 +5,15 @@ import { chatJSON, LlmError } from '../llm.js';
 import { localFeedback, localQuestion } from '../fallback.js';
 import { feedbackSchema, questionSchema, reportSchema } from '../schemas.js';
 import type { FeedbackResult, ReportResult } from '../schemas.js';
-import { FOLLOWUP_FOCUS_LABEL, ROUNDS, TOTAL_BASE_QUESTIONS, roundByKey } from '../interview-plan.js';
+import {
+  FOLLOWUP_FOCUS_LABEL,
+  ROUNDS,
+  isPresetKey,
+  presetByKey,
+  roundByKey,
+  roundsForPreset,
+} from '../interview-plan.js';
+import type { InterviewLanguage, PresetKey } from '../interview-plan.js';
 import {
   COMMON_QUESTIONS,
   COMMON_SOURCE,
@@ -16,12 +24,13 @@ import {
 } from '../common-questions.js';
 import type { DirectionKey } from '../common-questions.js';
 import { feedbackPrompt, questionPrompt, reportPrompt } from '../prompts.js';
-import { FOLLOWUP_THRESHOLD, analyzeAnswer, buildFallbackFollowup, calibrateScores } from '../scoring.js';
+import { analyzeAnswer, buildFallbackFollowup, calibrateScores } from '../scoring.js';
 import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
 import { buildDocx } from '../docx-export.js';
 import { createAiJob, failAiJob, finishAiJob, getAiJob, hasPendingAiJob } from '../ai-jobs.js';
 import { experienceSnippet } from './experiences.js';
 import { deriveTags } from '../tags.js';
+import { ensurePlan } from './plan.js';
 
 export const interviewRouter = Router();
 
@@ -120,23 +129,46 @@ interface SeedInfo {
   source: 'resume' | 'mixed' | 'common' | 'bank';
   direction?: DirectionKey;
   bank: string[];
+  language: InterviewLanguage;
+  preset: PresetKey;
 }
 
-/** seed_json 兼容两种格式：旧题库模式存 string[]，新模式存 {source, direction}。 */
+/** seed_json 兼容两种格式：旧题库模式存 string[]，新模式存 {source, direction, language, preset}。 */
 function seedOf(iv: InterviewRow): SeedInfo {
   const raw = parseJson<unknown>(iv.seed_json, null);
   if (Array.isArray(raw)) {
     return {
       source: iv.mode === 'bank' ? 'bank' : 'resume',
       bank: raw.filter((x): x is string => typeof x === 'string'),
+      language: 'zh',
+      preset: 'standard',
     };
   }
   if (raw && typeof raw === 'object') {
-    const o = raw as { source?: unknown; direction?: unknown };
-    const source = o.source === 'common' || o.source === 'mixed' ? o.source : 'resume';
-    return { source, direction: isDirection(o.direction) ? o.direction : undefined, bank: [] };
+    const o = raw as {
+      source?: unknown;
+      direction?: unknown;
+      language?: unknown;
+      preset?: unknown;
+      questions?: unknown;
+      bank?: unknown;
+    };
+    const bankRaw = Array.isArray(o.questions) ? o.questions : Array.isArray(o.bank) ? o.bank : [];
+    const source =
+      o.source === 'bank' || iv.mode === 'bank'
+        ? 'bank'
+        : o.source === 'common' || o.source === 'mixed'
+          ? o.source
+          : 'resume';
+    return {
+      source,
+      direction: isDirection(o.direction) ? o.direction : undefined,
+      bank: bankRaw.filter((x): x is string => typeof x === 'string'),
+      language: o.language === 'en' ? 'en' : 'zh',
+      preset: isPresetKey(o.preset) ? o.preset : 'standard',
+    };
   }
-  return { source: iv.mode === 'bank' ? 'bank' : 'resume', bank: [] };
+  return { source: iv.mode === 'bank' ? 'bank' : 'resume', bank: [], language: 'zh', preset: 'standard' };
 }
 
 function planFor(iv: InterviewRow): PlanRound[] {
@@ -145,22 +177,25 @@ function planFor(iv: InterviewRow): PlanRound[] {
     return [
       {
         key: 'practice',
-        name: '题库再练',
-        numeral: '练',
-        desc: '从你的个人题库里抽题，逐题作答并给反馈',
+        name: seed.language === 'en' ? 'Bank practice' : '题库再练',
+        numeral: seed.language === 'en' ? 'I' : '练',
+        desc:
+          seed.language === 'en'
+            ? 'Draw questions from your personal bank and answer one by one'
+            : '从你的个人题库里抽题，逐题作答并给反馈',
         count: Math.max(1, seed.bank.length),
       },
     ];
   }
   const dir = directionLabel(seed.direction);
-  return ROUNDS.map((r) => {
+  return roundsForPreset(seed.preset, seed.language).map((r) => {
     let desc = r.desc;
-    if (seed.source === 'common' && (r.key === 'professional' || r.key === 'behavioral')) {
+    if (seed.language !== 'en' && seed.source === 'common' && (r.key === 'professional' || r.key === 'behavioral')) {
       desc =
         r.key === 'professional'
           ? `「${dir}」方向的常见技术基础与项目题`
           : `「${dir}」方向的常见行为面试题，用 STAR 作答`;
-    } else if (seed.source === 'mixed' && (r.key === 'professional' || r.key === 'behavioral')) {
+    } else if (seed.language !== 'en' && seed.source === 'mixed' && (r.key === 'professional' || r.key === 'behavioral')) {
       desc = `${r.desc}，后半段混入「${dir}」常见题`;
     }
     return { key: r.key, name: r.name, numeral: r.numeral, desc, count: r.count };
@@ -168,7 +203,7 @@ function planFor(iv: InterviewRow): PlanRound[] {
 }
 
 function totalBase(iv: InterviewRow): number {
-  return iv.mode === 'bank' ? Math.max(1, seedOf(iv).bank.length) : TOTAL_BASE_QUESTIONS;
+  return planFor(iv).reduce((s, r) => s + r.count, 0);
 }
 
 function resumeContent(resumeId: number | null): string {
@@ -200,16 +235,17 @@ async function makeQuestion(
   const resumeText = resumeContent(iv.resume_id);
   const jobTitle = jobTitleOf(iv.job_id);
   const jd = jobJdOf(iv.job_id);
+  const seed = seedOf(iv);
   // 自我介绍与反问环节用固定题面，保证「分轮次」稳定，不让模型跑偏成专业题
   if (roundKey === 'intro' || roundKey === 'reverse') {
-    const q = localQuestion({ roundKey, resumeText, jobTitle, asked });
+    const q = localQuestion({ roundKey, resumeText, jobTitle, asked, language: seed.language });
     return { question: q.question, focus: q.focus, source: 'builtin' };
   }
 
-  const seed = seedOf(iv);
   // 以数据库里的当前进度为准：换轮时 iv 是旧快照，question_index 可能还没刷新。
   const questionIndex = getInterview(iv.id).question_index;
   const useCommon =
+    seed.language !== 'en' &&
     !!seed.direction &&
     !seedQuestion &&
     (seed.source === 'common' || (seed.source === 'mixed' && questionIndex >= 1));
@@ -242,14 +278,16 @@ async function makeQuestion(
         asked,
         seedQuestion,
         experiences: experienceSnippet(iv.job_id),
+        language: seed.language,
+        preset: seed.preset,
       }),
       { tag: `question-${roundKey}`, temperature: 0.75, maxTokens: 500 },
     );
-    return { question: data.question.trim(), focus: data.focus || roundByKey(roundKey).name, source: meta.source };
+    return { question: data.question.trim(), focus: data.focus || roundByKey(roundKey, seed.language).name, source: meta.source };
   } catch (err) {
     const e = err as LlmError;
     console.warn(`[interview] 出题降级 ${e.code}: ${e.message}`);
-    const q = localQuestion({ roundKey, resumeText, jobTitle, asked, seedQuestion });
+    const q = localQuestion({ roundKey, resumeText, jobTitle, asked, seedQuestion, language: seed.language });
     return { ...q, source: 'local' };
   }
 }
@@ -293,11 +331,14 @@ function sessionPayload(ivId: number) {
     ? (db.prepare('SELECT id, title FROM resume WHERE id = ?').get(iv.resume_id) ?? null)
     : null;
   const job = iv.job_id ? (db.prepare('SELECT id, title, company FROM job WHERE id = ?').get(iv.job_id) ?? null) : null;
+  const seedInfo = seedOf(iv);
   return {
     interview: {
       ...iv,
+      language: seedInfo.language,
+      preset: seedInfo.preset,
       report: parseJson<ReportResult | null>(iv.report_json, null),
-      seed: parseJson<string[]>(iv.seed_json, []),
+      seed: parseJson<unknown>(iv.seed_json, []),
     },
     resume,
     job,
@@ -489,9 +530,13 @@ interviewRouter.post(
     }
 
     const now = nowIso();
+    const language: InterviewLanguage = body.language === 'en' ? 'en' : 'zh';
+    const preset: PresetKey = isPresetKey(body.preset) ? body.preset : 'standard';
     const firstRound = mode === 'bank' ? 'practice' : ROUNDS[0].key;
     const seedPayload =
-      mode === 'bank' ? JSON.stringify(seeds) : JSON.stringify({ source: mode, direction: direction ?? null });
+      mode === 'bank'
+        ? JSON.stringify({ source: 'bank', language, preset, questions: seeds })
+        : JSON.stringify({ source: mode, direction: direction ?? null, language, preset });
     const info = db
       .prepare(
         'INSERT INTO interview (resume_id, job_id, mode, status, round_key, question_index, seed_json, started_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
@@ -516,6 +561,7 @@ async function runAnswerJob(id: number, turnId: number, answer: string) {
 
   let feedback: FeedbackResult;
   let source: 'llm' | 'local' = 'llm';
+  const language = seedOf(iv).language;
   try {
     const { data } = await chatJSON(
       feedbackSchema,
@@ -525,6 +571,8 @@ async function runAnswerJob(id: number, turnId: number, answer: string) {
         answer,
         jobTitle: jobTitleOf(iv.job_id),
         depth: turn.depth,
+        language,
+        preset: seedOf(iv).preset,
       }),
       { tag: `feedback-${turn.round_key}`, temperature: 0.4, maxTokens: 1800 },
     );
@@ -532,7 +580,7 @@ async function runAnswerJob(id: number, turnId: number, answer: string) {
   } catch (err) {
     const e = err as LlmError;
     console.warn(`[interview] 反馈降级 ${e.code}: ${e.message}`);
-    feedback = localFeedback({ roundKey: turn.round_key, question: turn.question, answer });
+    feedback = localFeedback({ roundKey: turn.round_key, question: turn.question, answer, language });
     source = 'local';
   }
 
@@ -543,11 +591,12 @@ async function runAnswerJob(id: number, turnId: number, answer: string) {
   const answeredCount = db
     .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL')
     .get(id) as { n: number };
-  // 追问：最多 2 层，方向限定为项目细节 / 数据来源 / 个人贡献
-  // 只有回答偏弱（低于阈值）时才追问，避免每道题都追问；并限制总题量
+  // 追问：层数与阈值由面试预设决定（压力面更易追问，HR 面更克制），方向限定为项目细节 / 数据来源 / 个人贡献
+  const presetDef = presetByKey(seedOf(iv).preset);
   const followable =
     turn.round_key === 'professional' || turn.round_key === 'behavioral' || turn.round_key === 'practice';
-  const canFollow = followable && turn.depth < 2 && score < FOLLOWUP_THRESHOLD && answeredCount.n + 1 < 18;
+  const canFollow =
+    followable && turn.depth < presetDef.maxDepth && score < presetDef.followupThreshold && answeredCount.n + 1 < 18;
   if (canFollow && !feedback.followup) {
     // 模型有时只评不追问；这里用规则补一个方向明确的追问，保证弱回答能稳定触发
     feedback.followup = buildFallbackFollowup({
@@ -749,11 +798,11 @@ interviewRouter.get('/interviews/:id/jobs/:jobId', (req, res) => {
   res.json({ status: 'done', result: job.result });
 });
 
-function localReport(turns: TurnRow[]): ReportResult {
+function localReport(turns: TurnRow[], language: InterviewLanguage = 'zh'): ReportResult {
   const byRound = new Map<string, number[]>();
   for (const t of turns) {
     if (t.score === null) continue;
-    const name = roundByKey(t.round_key).name;
+    const name = roundByKey(t.round_key, language).name;
     const arr = byRound.get(name) || [];
     arr.push(t.score);
     byRound.set(name, arr);
@@ -761,7 +810,10 @@ function localReport(turns: TurnRow[]): ReportResult {
   const roundScores = [...byRound.entries()].map(([round, arr]) => ({
     round,
     score: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length),
-    comment: '本地规则评分（模型不可用），按结构/内容/表达三维平均值计算。',
+    comment:
+      language === 'en'
+        ? 'Local rubric (model unavailable): average of structure / content / expression.'
+        : '本地规则评分（模型不可用），按结构/内容/表达三维平均值计算。',
   }));
   const all = turns.filter((t) => t.score !== null).map((t) => t.score as number);
   const overallScore = all.length ? Math.round(all.reduce((a, b) => a + b, 0) / all.length) : 0;
@@ -771,15 +823,30 @@ function localReport(turns: TurnRow[]): ReportResult {
     const fb = parseJson<FeedbackResult | null>(t.feedback_json, null);
     if ((t.score ?? 100) < 70 && fb?.issues?.length) weaknesses.push(fb.issues[0]);
   }
-  if (!weaknesses.length) weaknesses.push('未发现明显失分项，继续保持用数据支撑结论的习惯。');
-  for (const w of weaknesses.slice(0, 3)) reviewPoints.push(`针对「${w}」准备一版新的回答。`);
-  reviewPoints.push('把本次题目与答案写入复盘，7 天后从题库再练一次。');
+  if (!weaknesses.length) {
+    weaknesses.push(
+      language === 'en'
+        ? 'No obvious scoring loss found. Keep backing conclusions with data.'
+        : '未发现明显失分项，继续保持用数据支撑结论的习惯。',
+    );
+  }
+  for (const w of weaknesses.slice(0, 3)) {
+    reviewPoints.push(language === 'en' ? `Prepare a new answer for: ${w}` : `针对「${w}」准备一版新的回答。`);
+  }
+  reviewPoints.push(
+    language === 'en'
+      ? 'Write this session into your review notes and practise the questions again in 7 days.'
+      : '把本次题目与答案写入复盘，7 天后从题库再练一次。',
+  );
   return {
     overallScore,
     roundScores,
     weaknesses: [...new Set(weaknesses)].slice(0, 4),
     reviewPoints: [...new Set(reviewPoints)].slice(0, 5),
-    summary: `本地汇总：共作答 ${all.length} 次，平均分 ${overallScore}。模型不可用时仅做规则汇总，建议稍后重跑以获得深度点评。`,
+    summary:
+      language === 'en'
+        ? `Local summary: ${all.length} answers with an average of ${overallScore}. The model was unavailable, so only rule-based aggregation was applied; rerun later for deeper feedback.`
+        : `本地汇总：共作答 ${all.length} 次，平均分 ${overallScore}。模型不可用时仅做规则汇总，建议稍后重跑以获得深度点评。`,
   };
 }
 
@@ -795,13 +862,16 @@ async function runFinishJob(id: number) {
 
   let report: ReportResult;
   let source: 'llm' | 'local' = 'llm';
+  const language = seedOf(iv).language;
   try {
     const { data } = await chatJSON(
       reportSchema,
       reportPrompt({
         jobTitle: jobTitleOf(iv.job_id),
+        language,
+        preset: seedOf(iv).preset,
         turns: turns.map((t) => ({
-          round: roundByKey(t.round_key).name,
+          round: roundByKey(t.round_key, language).name,
           question: t.question,
           answer: t.answer || '',
           score: t.score,
@@ -814,7 +884,7 @@ async function runFinishJob(id: number) {
   } catch (err) {
     const e = err as LlmError;
     console.warn(`[interview] 报告降级 ${e.code}: ${e.message}`);
-    report = localReport(turns);
+    report = localReport(turns, language);
     source = 'local';
   }
 
@@ -840,9 +910,10 @@ async function runFinishJob(id: number) {
     }
 
     // 沉淀到个人题库：题目去重，记录最近一次得分与薄弱标记
-    const seedRows = iv.mode === 'bank' ? parseJson<string[]>(iv.seed_json, []) : [];
+    const language = seedOf(iv).language;
+    const seedRows = seedOf(iv).bank;
     for (const t of turns) {
-      const category = roundByKey(t.round_key).name;
+      const category = roundByKey(t.round_key, language).name;
       const existing = db.prepare('SELECT id, ask_count FROM bank_item WHERE question = ?').get(t.question) as
         | { id: number; ask_count: number }
         | undefined;
@@ -870,6 +941,13 @@ async function runFinishJob(id: number) {
       /* 事务可能已经回滚 */
     }
     throw err;
+  }
+
+  // MOD-03：报告落库后把薄弱项与复习点转成 7 天任务；生成失败不影响报告本身。
+  try {
+    ensurePlan({ refresh: true });
+  } catch (err) {
+    console.warn('[plan] 生成 7 天计划失败:', err instanceof Error ? err.message : err);
   }
 
   return { report, source, session: sessionPayload(id) };

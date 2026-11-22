@@ -114,6 +114,61 @@ export interface TrainingTask {
   created_at: string;
 }
 
+export interface PlanDay {
+  date: string;
+  isToday: boolean;
+  total: number;
+  done: number;
+  tasks: TrainingTask[];
+}
+
+export interface PlanData {
+  today: string;
+  from: string;
+  to: string;
+  created: number;
+  total: number;
+  done: number;
+  days: PlanDay[];
+}
+
+export interface WeeklyMetrics {
+  interviews: {
+    started: number;
+    finished: number;
+    avgScore: number | null;
+    prevAvg: number | null;
+    delta: number | null;
+    items: {
+      id: number;
+      status: string;
+      jobTitle: string | null;
+      startedAt: string;
+      score: number | null;
+    }[];
+  };
+  applications: {
+    newCount: number;
+    stageChanges: {
+      changedAt: string;
+      fromStage: string | null;
+      toStage: string;
+      company: string;
+      title: string;
+    }[];
+  };
+  reviews: { count: number };
+  bank: { added: number };
+  plan: { total: number; done: number };
+}
+
+export interface WeeklyReport {
+  from: string;
+  to: string;
+  metrics: WeeklyMetrics;
+  markdown: string;
+}
+
 export interface ExperienceCard {  id: number;
   title: string;
   role: string;
@@ -238,8 +293,15 @@ export interface Session {
     started_at: string;
     ended_at: string | null;
     overall_score: number | null;
+    language?: 'zh' | 'en';
+    preset?: string;
     report: ReportResult | null;
-    seed: string[] | { source: 'resume' | 'mixed' | 'common'; direction: string | null };
+    seed: string[] | {
+      source: 'resume' | 'mixed' | 'common' | 'bank';
+      direction?: string | null;
+      language?: 'zh' | 'en';
+      preset?: 'standard' | 'hr' | 'stress' | 'behavioral';
+    };
   };
   resume: { id: number; title: string } | null;
   job: { id: number; title: string; company: string } | null;
@@ -324,6 +386,25 @@ export interface ApplicationRecord {
     }[];
     reviews: { id: number; question: string; rating: number; created_at: string }[];
   };
+}
+
+export interface ApplicationCalendarEvent {
+  date: string;
+  type: 'applied' | 'followup' | 'deadline' | 'stage';
+  applicationId?: number;
+  jobId?: number;
+  company?: string;
+  title?: string;
+  stage?: ApplicationStage;
+  fromStage?: ApplicationStage | null;
+  toStage?: ApplicationStage;
+  note?: string;
+}
+
+export interface ApplicationCalendar {
+  from: string;
+  to: string;
+  events: ApplicationCalendarEvent[];
 }
 
 export interface BankItem {

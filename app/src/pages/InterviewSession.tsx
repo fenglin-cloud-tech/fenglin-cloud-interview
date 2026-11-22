@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, type AnswerJobResult, type FinishJobResult, type SkipJobResult } from '../api';
 import type { Session, Turn } from '../types';
-import { ROUND_LABEL, elapsed, formatDateTime } from '../lib/format';
+import { PRESET_LABEL, ROUND_LABEL, elapsed, formatDateTime } from '../lib/format';
 import { useSpeech } from '../lib/speech';
 import { useTts } from '../lib/tts';
 import {
@@ -22,6 +22,16 @@ const DRAFT_PREFIX = 'fenglin:answer';
 
 function draftKey(interviewId: number, turnId: number): string {
   return `${DRAFT_PREFIX}:${interviewId}:${turnId}`;
+}
+
+/** FUNC-14：反问轮展示专用维度名，其余轮次沿用结构/内容/表达。 */
+function scoreLabels(roundKey: string | undefined, lang: 'zh' | 'en'): [string, string, string] {
+  if (roundKey === 'reverse') {
+    return lang === 'en'
+      ? ['Relevance', 'Info value', 'Role fit']
+      : ['问题相关性', '信息获取价值', '岗位理解'];
+  }
+  return lang === 'en' ? ['Structure', 'Content', 'Expression'] : ['结构', '内容', '表达'];
 }
 
 function sleep(ms: number): Promise<void> {
@@ -93,13 +103,15 @@ export function InterviewSession() {
     return () => window.clearInterval(t);
   }, []);
 
+  const interviewLang: 'zh' | 'en' = session?.interview.language === 'en' ? 'en' : 'zh';
   const speech = useSpeech(
     useCallback((text: string) => {
       setAnswer((prev) => (prev ? `${prev}${prev.endsWith('\n') ? '' : ' '}${text}` : text));
     }, []),
+    interviewLang,
   );
 
-  const tts = useTts();
+  const tts = useTts(interviewLang);
   const [timer, setTimer] = useState<{ turnId: number; startedAt: number } | null>(null);
   const [timedOutEmpty, setTimedOutEmpty] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -347,6 +359,8 @@ export function InterviewSession() {
                     ? '简历 + 常见题'
                     : '按简历出题'}
             </span>
+            {interviewLang === 'en' && <span className="exam-mode exam-lang">English</span>}
+            <span className="exam-mode">{PRESET_LABEL[session.interview.preset || 'standard'] || '标准面'}</span>
           </h1>
           <div className="exam-sub">
             开始于 {formatDateTime(session.interview.started_at)} · 计时{' '}
@@ -422,9 +436,22 @@ export function InterviewSession() {
                         {expandedTurns.includes(t.id) && (
                           <div className="turn-feedback-body">
                             <div className="turn-meta">
-                              <span>结构 {t.feedback.scores.structure}</span>
-                              <span>内容 {t.feedback.scores.content}</span>
-                              <span>表达 {t.feedback.scores.expression}</span>
+                              {(() => {
+                                const [a, b, c] = scoreLabels(t.round_key, interviewLang);
+                                return (
+                                  <>
+                                    <span>
+                                      {a} {t.feedback.scores.structure}
+                                    </span>
+                                    <span>
+                                      {b} {t.feedback.scores.content}
+                                    </span>
+                                    <span>
+                                      {c} {t.feedback.scores.expression}
+                                    </span>
+                                  </>
+                                );
+                              })()}
                             </div>
                             <p>{t.feedback.summary}</p>
                             {t.feedback.strengths.length > 0 && (
@@ -500,7 +527,11 @@ export function InterviewSession() {
                   className="textarea answer-input"
                   rows={9}
                   aria-label="作答内容"
-                  placeholder="像真的面试一样说出来，再打成文字。建议：先给结论，再讲情境、你的动作、结果。"
+                  placeholder={
+                    interviewLang === 'en'
+                      ? 'Answer in English, as if speaking in a real interview. Lead with the conclusion, then situation, actions and results.'
+                      : '像真的面试一样说出来，再打成文字。建议：先给结论，再讲情境、你的动作、结果。'
+                  }
                   value={answer}
                   onChange={(e) => {
                     if (tts.speaking) tts.stop();
@@ -604,13 +635,16 @@ export function InterviewSession() {
                 extra={<SourceBadge source={lastAnswered?.source as 'llm' | 'local'} />}
               >
               <div className="fb-scores">
-                {(
-                  [
-                    ['结构', feedback.scores.structure],
-                    ['内容', feedback.scores.content],
-                    ['表达', feedback.scores.expression],
-                  ] as [string, number][]
-                ).map(([label, v]) => (
+                {(() => {
+                  const labels = scoreLabels(lastAnswered?.round_key, interviewLang);
+                  return (
+                    [
+                      [labels[0], feedback.scores.structure],
+                      [labels[1], feedback.scores.content],
+                      [labels[2], feedback.scores.expression],
+                    ] as [string, number][]
+                  );
+                })().map(([label, v]) => (
                   <div className="fb-score" key={label}>
                     <div className="fb-score-num">{v}</div>
                     <div className="fb-score-label">{label}</div>

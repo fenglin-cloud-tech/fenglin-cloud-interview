@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { Button, Callout, Card, Modal, PageHeader } from '../components/ui';
 import { useApp } from '../state';
+import { recordBackupExport } from '../lib/backup-reminder';
 
 const CLEAR_MODULES: {
   key: 'interviews' | 'reviews' | 'bank' | 'applications';
@@ -88,6 +89,7 @@ export function Backup() {
       a.remove();
       URL.revokeObjectURL(url);
       setExported({ filename: file.filename, bytes: file.bytes });
+      recordBackupExport();
       toast('备份文件已生成并开始下载', 'ok');
       return true;
     } catch (e) {

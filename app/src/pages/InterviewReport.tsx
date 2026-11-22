@@ -3,6 +3,15 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import type { Session } from '../types';
 import { formatDateTime } from '../lib/format';
+import { SHARE_PRIVACY_CONFIRM, buildInterviewShareHtml, downloadShareHtml } from '../lib/share';
+
+/** FUNC-14：反问轮展示专用维度名。 */
+function scoreLabels(roundKey: string | undefined, lang: 'zh' | 'en'): [string, string, string] {
+  if (roundKey === 'reverse') {
+    return lang === 'en' ? ['Relevance', 'Info value', 'Role fit'] : ['问题相关性', '信息获取价值', '岗位理解'];
+  }
+  return lang === 'en' ? ['Structure', 'Content', 'Expression'] : ['结构', '内容', '表达'];
+}
 import { downloadFrom, downloadText, openPrintView, slugDate } from '../lib/download';
 import { Button, Card, Chip, CopyButton, ErrorState, PageSkeleton, ScoreRing } from '../components/ui';
 import { useApp } from '../state';
@@ -30,11 +39,11 @@ export function InterviewReport() {
 
   const report = session?.interview.report;
 
-  const makeReview = async () => {
+  const makeReview = async (includeFollowups = false) => {
     setCreatingReview(true);
     try {
-      const { created } = await api.reviewFromInterview(ivId);
-      toast(`已生成 ${created} 条复盘草稿，去补改进点`, 'ok');
+      const { created } = await api.reviewFromInterview(ivId, includeFollowups);
+      toast(`已生成 ${created} 条复盘草稿${includeFollowups ? '（含追问）' : ''}，去补改进点`, 'ok');
       navigate('/reviews');
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '生成失败', 'err');
@@ -130,6 +139,18 @@ export function InterviewReport() {
           <Button size="sm" onClick={() => downloadFrom(`/api/interviews/${ivId}/report/docx`)}>
             下载 Word
           </Button>
+          <Button
+            size="sm"
+            variant="quiet"
+            onClick={() => {
+              if (!session || !report) return;
+              if (!window.confirm(SHARE_PRIVACY_CONFIRM)) return;
+              downloadShareHtml(`面试报告-${ivId}-${slugDate()}.html`, buildInterviewShareHtml(session));
+              toast('分享快照已生成，可离线打开', 'ok');
+            }}
+          >
+            导出分享快照
+          </Button>
           <Button size="sm" onClick={() => openPrintView(`/print/interview/${ivId}`)}>
             打印 / 存为 PDF
           </Button>
@@ -202,11 +223,16 @@ export function InterviewReport() {
         <div className="next-actions">
           <div>
             <strong>把这场面试沉淀下来</strong>
-            <p className="muted small">一键生成复盘草稿（题目 + 你的回答 + 反馈要点），补完改进点后进入题库。</p>
+            <p className="muted small">
+              一键生成复盘草稿（题目 + 你的回答 + 反馈要点），补完改进点后进入题库。追问通常暴露了最真实的问题，建议一并沉淀。
+            </p>
           </div>
           <div className="row gap-8 wrap">
             <Button variant="ink" onClick={() => void makeReview()} loading={creatingReview}>
               生成复盘草稿
+            </Button>
+            <Button variant="quiet" onClick={() => void makeReview(true)} disabled={creatingReview}>
+              含追问一起生成
             </Button>
             <Button onClick={() => navigate('/bank')}>去题库</Button>
             <Button variant="quiet" onClick={() => navigate('/interviews')}>
@@ -249,9 +275,22 @@ export function InterviewReport() {
                       <div className="qa-label">反馈</div>
                       <p>{t.feedback.summary}</p>
                       <div className="fb-scores small">
-                        <span>结构 {t.feedback.scores.structure}</span>
-                        <span>内容 {t.feedback.scores.content}</span>
-                        <span>表达 {t.feedback.scores.expression}</span>
+                        {(() => {
+                          const [a, b, c] = scoreLabels(t.round_key, session.interview.language || 'zh');
+                          return (
+                            <>
+                              <span>
+                                {a} {t.feedback.scores.structure}
+                              </span>
+                              <span>
+                                {b} {t.feedback.scores.content}
+                              </span>
+                              <span>
+                                {c} {t.feedback.scores.expression}
+                              </span>
+                            </>
+                          );
+                        })()}
                       </div>
                       {t.feedback.improvedAnswer && (
                         <>

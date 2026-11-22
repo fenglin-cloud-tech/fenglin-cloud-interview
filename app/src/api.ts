@@ -2,6 +2,7 @@ import { hasAiConsent } from './lib/consent';
 import type {
   ApplicationRecord,
   ApplicationStage,
+  ApplicationCalendar,
   BankItem,
   InterviewListItem,
   JdAnalysisRecord,
@@ -29,7 +30,10 @@ import type {
   ReviewKind,
   ReviewResult,
   ReviewResultRecord,
+  PlanData,
+  WeeklyReport,
 } from './types';
+import { recordBackupWrite } from './lib/backup-reminder';
 
 export class ApiError extends Error {
   status: number;
@@ -124,6 +128,9 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs = DEFAULT_
     const err = (body as { error?: { code?: string; message?: string; detail?: string } } | null)?.error;
     throw new ApiError(res.status, err?.message || `请求失败（${res.status}）`, err?.code || 'HTTP_ERROR', err?.detail);
   }
+  // FUNC-16：成功写操作计数（AI 调用、备份导入/导出不计），用于备份提醒。
+  const method = (init?.method || 'GET').toUpperCase();
+  if (method !== 'GET' && !path.startsWith('/backup') && !needsAiConsent(path)) recordBackupWrite();
   return body as T;
 }
 
@@ -309,6 +316,8 @@ export const api = {
   ) => put<{ job: Job }>(`/jobs/${id}`, body),
   deleteJob: (id: number) => del<{ ok: boolean }>(`/jobs/${id}`),
   applications: () => request<{ applications: ApplicationRecord[] }>('/applications'),
+  applicationCalendar: (from: string, to: string) =>
+    request<ApplicationCalendar>(`/applications/calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   applicationDetail: (id: number) =>
     request<{
       application: ApplicationRecord;
@@ -387,6 +396,15 @@ export const api = {
   updateTrainingTask: (id: number, body: { title?: string; status?: string }) =>
     patch<{ task: TrainingTask }>(`/training-tasks/${id}`, body),
   deleteTrainingTask: (id: number) => del<{ ok: boolean }>(`/training-tasks/${id}`),
+  planToday: () => request<PlanData>('/plan/today'),
+  completePlanTask: (id: number) => post<{ task: TrainingTask }>(`/plan/${id}/complete`),
+  weeklyReport: (params?: { from?: string; to?: string }) => {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    const qs = sp.toString();
+    return request<WeeklyReport>(`/reports/weekly${qs ? `?${qs}` : ''}`);
+  },
 
   dataCounts: () =>
     request<{ interviews: number; reviews: number; bankItems: number; applications: number; turns: number }>(
@@ -484,6 +502,8 @@ export const api = {
     resumeId?: number | null;
     jobId?: number | null;
     bankIds?: number[];
+    language?: 'zh' | 'en';
+    preset?: 'standard' | 'hr' | 'stress' | 'behavioral';
   }) => post<Session>('/interviews', body),
   session: (id: number) => request<Session>(`/interviews/${id}`),
   answer: (id: number, body: { turnId: number; answer: string }) =>
@@ -543,7 +563,8 @@ export const api = {
   ) => put<{ review: ReviewItem }>(`/reviews/${id}`, body),
   deleteReview: (id: number) => del<{ ok: boolean }>(`/reviews/${id}`),
   exportReviews: () => request<{ markdown: string; count: number }>('/reviews/export'),
-  reviewFromInterview: (id: number) => post<{ created: number }>(`/reviews/from-interview/${id}`),
+  reviewFromInterview: (id: number, includeFollowups = false) =>
+    post<{ created: number }>(`/reviews/from-interview/${id}`, { includeFollowups }),
 
   bank: (params?: {
     category?: string;

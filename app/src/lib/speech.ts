@@ -47,7 +47,7 @@ export interface SpeechState {
  * 浏览器语音输入（Web Speech API）。
  * 不支持时 supported=false，调用方应降级为纯文字输入并给出明确提示。
  */
-export function useSpeech(onFinal: (text: string) => void): SpeechState {
+export function useSpeech(onFinal: (text: string) => void, lang: 'zh' | 'en' = 'zh'): SpeechState {
   const ctor = useMemo(getCtor, []);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState('');
@@ -79,7 +79,7 @@ export function useSpeech(onFinal: (text: string) => void): SpeechState {
       }
     }
     const rec = new ctor();
-    rec.lang = 'zh-CN';
+    rec.lang = lang === 'en' ? 'en-US' : 'zh-CN';
     rec.continuous = true;
     rec.interimResults = true;
     rec.onresult = (e) => {
@@ -119,7 +119,7 @@ export function useSpeech(onFinal: (text: string) => void): SpeechState {
       setError('语音识别启动失败，请改用文字作答');
       setListening(false);
     }
-  }, [ctor]);
+  }, [ctor, lang]);
 
   const stop = useCallback(() => {
     try {

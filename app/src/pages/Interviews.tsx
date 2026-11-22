@@ -25,6 +25,13 @@ const FALLBACK_DIRECTIONS = [
   { key: 'operations', label: '运营', desc: '', count: 12 },
 ];
 
+const PRESET_OPTIONS: { key: 'standard' | 'hr' | 'stress' | 'behavioral'; name: string; desc: string }[] = [
+  { key: 'standard', name: '标准面', desc: '四轮完整流程，最接近常规校招。' },
+  { key: 'hr', name: 'HR 面', desc: '重点看动机、稳定性、沟通与团队协作。' },
+  { key: 'stress', name: '压力面', desc: '高压追问，几乎每个回答都会被继续深挖。' },
+  { key: 'behavioral', name: '行为面', desc: '全行为题，重点看 STAR 与复盘深度。' },
+];
+
 export function Interviews() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -42,6 +49,8 @@ export function Interviews() {
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
   const [mode, setMode] = useState<'resume' | 'bank' | 'common' | 'mixed'>('resume');
+  const [language, setLanguage] = useState<'zh' | 'en'>('zh');
+  const [preset, setPreset] = useState<'standard' | 'hr' | 'stress' | 'behavioral'>('standard');
   const [direction, setDirection] = useState('backend');
   const [common, setCommon] = useState<Awaited<ReturnType<typeof api.commonQuestions>> | null>(null);
   const [bankItems, setBankItems] = useState<BankItem[]>([]);
@@ -118,6 +127,8 @@ export function Interviews() {
         direction: mode === 'common' || mode === 'mixed' ? direction : undefined,
         resumeId,
         jobId,
+        language,
+        preset,
         bankIds: mode === 'bank' ? selected : undefined,
       });
       navigate(`/interviews/${session.interview.id}/session`);
@@ -179,17 +190,72 @@ export function Interviews() {
             </Field>
           </div>
 
+          <div className="seg seg-wrap" role="group" aria-label="面试语言">
+            <button
+              className={language === 'zh' ? 'on' : ''}
+              aria-pressed={language === 'zh'}
+              onClick={() => setLanguage('zh')}
+            >
+              中文面试
+            </button>
+            <button
+              className={language === 'en' ? 'on' : ''}
+              aria-pressed={language === 'en'}
+              onClick={() => {
+                setLanguage('en');
+                if (mode !== 'resume') setMode('resume');
+              }}
+            >
+              English
+            </button>
+          </div>
+          {language === 'en' && (
+            <p className="muted small">英文面试按简历出题，题目、逐题反馈与报告均使用英文；朗读与语音识别切换为英文。</p>
+          )}
+
+          <div className="seg seg-wrap" role="group" aria-label="面试类型">
+            {PRESET_OPTIONS.map((p) => (
+              <button
+                key={p.key}
+                className={preset === p.key ? 'on' : ''}
+                aria-pressed={preset === p.key}
+                onClick={() => setPreset(p.key)}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">{PRESET_OPTIONS.find((p) => p.key === preset)?.desc}</p>
+
           <div className="seg seg-wrap" role="group" aria-label="出题方式">
             <button className={mode === 'resume' ? 'on' : ''} aria-pressed={mode === 'resume'} onClick={() => setMode('resume')}>
               只用简历题
             </button>
-            <button className={mode === 'mixed' ? 'on' : ''} aria-pressed={mode === 'mixed'} onClick={() => setMode('mixed')}>
+            <button
+              className={mode === 'mixed' ? 'on' : ''}
+              aria-pressed={mode === 'mixed'}
+              disabled={language === 'en'}
+              title={language === 'en' ? '英文面试暂只支持按简历出题' : undefined}
+              onClick={() => setMode('mixed')}
+            >
               简历 + 常见题
             </button>
-            <button className={mode === 'common' ? 'on' : ''} aria-pressed={mode === 'common'} onClick={() => setMode('common')}>
+            <button
+              className={mode === 'common' ? 'on' : ''}
+              aria-pressed={mode === 'common'}
+              disabled={language === 'en'}
+              title={language === 'en' ? '英文面试暂只支持按简历出题' : undefined}
+              onClick={() => setMode('common')}
+            >
               只用常见题
             </button>
-            <button className={mode === 'bank' ? 'on' : ''} aria-pressed={mode === 'bank'} onClick={() => setMode('bank')}>
+            <button
+              className={mode === 'bank' ? 'on' : ''}
+              aria-pressed={mode === 'bank'}
+              disabled={language === 'en'}
+              title={language === 'en' ? '题库题目为中文，英文面试暂不支持' : undefined}
+              onClick={() => setMode('bank')}
+            >
               从题库再练
             </button>
           </div>

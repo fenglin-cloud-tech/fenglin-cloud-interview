@@ -83,6 +83,10 @@ export function Bank() {
   const [step, setStep] = useState(0);
   const [recording, setRecording] = useState(false);
   const [lastResult, setLastResult] = useState<ReviewResultRecord | null>(null);
+  const [lastChoice, setLastChoice] = useState<ReviewResult | null>(null);
+  const [reviewAnswer, setReviewAnswer] = useState('');
+  const [coach, setCoach] = useState<{ improvement: string; tags: string[] } | null>(null);
+  const [coachBusy, setCoachBusy] = useState(false);
 
   const load = useCallback(
     (cursor?: number | null) => {
@@ -125,12 +129,18 @@ export function Bank() {
     setQueue(plan.tasks);
     setStep(0);
     setLastResult(null);
+    setLastChoice(null);
+    setReviewAnswer('');
+    setCoach(null);
   };
 
   const closeReview = () => {
     setQueue([]);
     setStep(0);
     setLastResult(null);
+    setLastChoice(null);
+    setReviewAnswer('');
+    setCoach(null);
   };
 
   const record = async (result: ReviewResult) => {
@@ -140,12 +150,32 @@ export function Bank() {
     try {
       const rec = await api.recordReviewResult(task.kind, task.refId, result);
       setLastResult(rec);
+      setLastChoice(result);
       loadPlan();
       load();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '记录失败', 'err');
     } finally {
       setRecording(false);
+    }
+  };
+
+  const askCoach = async () => {
+    const task = queue[step];
+    if (!task || coachBusy) return;
+    if (!reviewAnswer.trim()) return toast('先写下你的回答，再让 AI 看改进点', 'err');
+    setCoachBusy(true);
+    try {
+      const { result } = await api.reviewCoach({
+        question: task.question,
+        answer: reviewAnswer.trim(),
+        performance: task.improvement ? `上次复盘改进点：${task.improvement}` : '复习时尝试回忆并重新作答',
+      });
+      setCoach(result);
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'AI 教练调用失败', 'err');
+    } finally {
+      setCoachBusy(false);
     }
   };
 
@@ -157,6 +187,9 @@ export function Bank() {
     }
     setStep((s) => s + 1);
     setLastResult(null);
+    setLastChoice(null);
+    setReviewAnswer('');
+    setCoach(null);
   };
 
   const add = async () => {
@@ -642,10 +675,49 @@ export function Bank() {
                 <p>
                   下次复习：{formatDate(lastResult.dueAt)}（{lastResult.intervalDays} 天后 · 第 {lastResult.stage + 1} 档）
                 </p>
+                <p className="sched-compare">
+                  {queue[step].lastScore != null
+                    ? `上次得分 ${queue[step].lastScore}；本次自评「${lastChoice === 'good' ? '记住了' : lastChoice === 'ok' ? '有点模糊' : '没记住'}」。`
+                    : `首次复习，暂无上次得分；本次自评「${lastChoice === 'good' ? '记住了' : lastChoice === 'ok' ? '有点模糊' : '没记住'}」。`}
+                </p>
               </div>
             ) : (
               <>
-                <p className="sched-ask">先在心里过一遍这题，再如实选择掌握程度：</p>
+                <Field
+                  label="先写下你的回答（可选）"
+                  hint="只写关键词也可以。写完再自评，能明显减少「以为会了」的错觉。"
+                >
+                  <textarea
+                    className="input"
+                    rows={4}
+                    value={reviewAnswer}
+                    onChange={(e) => setReviewAnswer(e.target.value)}
+                    placeholder="用 3-5 句话或关键词回答这道题…"
+                  />
+                </Field>
+                <div className="row gap-8 wrap sched-coach-row">
+                  <Button variant="quiet" size="sm" onClick={() => void askCoach()} loading={coachBusy}>
+                    用 AI 看改进点
+                  </Button>
+                  <span className="muted small">可选；AI 只读这道题和你的回答，不写入题库。</span>
+                </div>
+                {coach && (
+                  <Callout tone="info">
+                    <strong>改进点</strong>
+                    <p>{coach.improvement}</p>
+                    {coach.tags.length > 0 && (
+                      <div className="row gap-8 wrap">
+                        {coach.tags.map((tag) => (
+                          <Chip key={tag} tone="ink">
+                            {tag}
+                          </Chip>
+                        ))}
+                      </div>
+                    )}
+                  </Callout>
+                )}
+
+                <p className="sched-ask">现在如实选择掌握程度：</p>
                 <div className="sched-btns">
                   <Button variant="ink" onClick={() => void record('good')} loading={recording}>
                     记住了

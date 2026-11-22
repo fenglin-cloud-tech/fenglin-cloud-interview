@@ -7497,3 +7497,448 @@ select.input {
     box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
   }
 }
+
+/* MOD-03：7 天计划 */
+.plan-days {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.plan-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-day.plan-today {
+  border-left: 3px solid var(--cyan);
+  background: var(--panel);
+}
+
+.plan-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plan-day-label {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 8px;
+}
+
+.plan-day-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.plan-list li.done .plan-task-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.plan-check {
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  margin-top: 1px;
+  border: 1px solid var(--line-3);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.plan-check[aria-pressed='true'] {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.plan-task-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex: 1 1 auto;
+}
+
+.plan-task-title {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+.plan-task-link {
+  font-size: 11.5px;
+  color: var(--cyan-ink);
+  white-space: nowrap;
+}
+
+.plan-task-link:hover {
+  text-decoration: underline;
+}
+
+.plan-home-list {
+  margin-top: 4px;
+}
+
+.plan-home-list li {
+  align-items: flex-start;
+}
+
+@media screen and (max-width: 760px) {
+  .plan-days {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* MOD-04：投递日历 / 看板 / 今日跟进 */
+.app-today {
+  margin: 12px 0 16px;
+  padding: 11px 14px;
+  border: 1px solid var(--accent-line);
+  border-left: 3px solid var(--amber);
+  background: var(--panel);
+}
+
+.app-today-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.app-today-head strong {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.app-today-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  text-align: left;
+}
+
+.app-today-chip:hover {
+  border-color: var(--cyan);
+}
+
+.app-today-chip span {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.app-calendar-card .card-head {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-top: 12px;
+}
+
+.app-cal-week {
+  background: var(--panel-2);
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.app-cal-cell {
+  min-height: 108px;
+  padding: 6px 7px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-cal-cell.out {
+  background: var(--panel-2);
+}
+
+.app-cal-cell.today {
+  box-shadow: inset 0 0 0 2px var(--cyan);
+}
+
+.app-cal-date {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.app-cal-cell.today .app-cal-date {
+  color: var(--cyan-ink);
+  font-weight: 700;
+}
+
+.app-cal-event {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 5px;
+  border: 0;
+  border-left: 2px solid var(--line-3);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  text-align: left;
+}
+
+.app-cal-event.applied {
+  border-left-color: var(--blue);
+}
+
+.app-cal-event.followup {
+  border-left-color: var(--amber);
+}
+
+.app-cal-event.deadline {
+  border-left-color: var(--danger);
+}
+
+.app-cal-event.stage {
+  border-left-color: var(--ok);
+}
+
+.app-cal-event:hover {
+  background: var(--cyan-soft);
+}
+
+.app-cal-more {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.app-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-board-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.app-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 2px solid var(--line-2);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.app-board-head b {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan-ink);
+}
+
+.app-board-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  text-align: left;
+}
+
+.app-board-card:hover {
+  border-color: var(--cyan);
+  background: var(--panel-2);
+}
+
+.app-board-card strong {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.app-board-card span {
+  font-size: 12px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+.app-board-card em {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+}
+
+.app-board-card em.app-board-next {
+  color: var(--amber);
+}
+
+.app-board-empty {
+  padding: 6px 2px;
+}
+
+@media screen and (max-width: 1100px) {
+  .app-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .app-cal-cell {
+    min-height: 80px;
+  }
+
+  .app-cal-event {
+    font-size: 9.5px;
+  }
+
+  .app-board {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* MOD-10：周报 */
+.weekly-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0 14px;
+}
+
+.weekly-date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.weekly-date .input {
+  width: 150px;
+}
+
+.weekly-md {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 560px;
+  overflow: auto;
+}
+
+@media print {
+  .weekly-md {
+    max-height: none;
+    overflow: visible;
+    border: none;
+    background: transparent;
+  }
+}
+
+/* FUNC-15：复习先作答与得分对比 */
+.sched-coach-row {
+  margin: 8px 0 12px;
+}
+
+.sched-compare {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* FUNC-16：备份提醒 */
+.backup-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+  padding: 11px 14px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--amber);
+  background: var(--panel);
+}
+
+.backup-nudge-eyebrow {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  margin-bottom: 3px;
+}
+
+.backup-nudge strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.backup-nudge p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 720px;
+}
+
+
+
+
+

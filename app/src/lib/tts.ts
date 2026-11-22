@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * 浏览器内置 SpeechSynthesis 朗读封装。
- * - 优先选择中文语音（zh-*）；
+ * - 按面试语言优先选择中文（zh-*）或英文（en-*）语音；
  * - 浏览器没有任何可用语音时，按系统默认朗读；
- * - 明确没有中文语音时降级为静默，并给出提示，不调用外部 TTS。
+ * - 明确没有目标语言语音时降级为静默，并给出提示，不调用外部 TTS。
  */
-export function useTts() {
+export function useTts(lang: 'zh' | 'en' = 'zh') {
   const supported =
     typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -30,12 +30,14 @@ export function useTts() {
   }, [supported]);
 
   const hasVoices = voices.length > 0;
-  const zh = voices.find((v) => /^zh([-_]|$)/i.test(v.lang)) || null;
-  const canSpeak = supported && (!hasVoices || !!zh);
+  const target = voices.find((v) => (lang === 'en' ? /^en([-_]|$)/i : /^zh([-_]|$)/i).test(v.lang)) || null;
+  const canSpeak = supported && (!hasVoices || !!target);
   const note = !supported
     ? '当前浏览器不支持语音朗读，请用文字作答。'
-    : hasVoices && !zh
-      ? '当前浏览器没有中文语音，朗读已降级为静默；可继续用文字或语音作答。'
+    : hasVoices && !target
+      ? lang === 'en'
+        ? '当前浏览器没有英文语音，朗读已降级为静默；可继续用文字作答。'
+        : '当前浏览器没有中文语音，朗读已降级为静默；可继续用文字或语音作答。'
       : '';
 
   const stop = useCallback(() => {
@@ -49,17 +51,17 @@ export function useTts() {
   const speak = useCallback(
     (text: string) => {
       if (!supported) return;
-      if (hasVoices && !zh) {
+      if (hasVoices && !target) {
         setSpeaking(false);
         return;
       }
       window.clearTimeout(guardRef.current ?? undefined);
       window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'zh-CN';
+      utter.lang = lang === 'en' ? 'en-US' : 'zh-CN';
       utter.rate = rate;
       utter.pitch = 1;
-      if (zh) utter.voice = zh;
+      if (target) utter.voice = target;
       utter.onend = () => setSpeaking(false);
       utter.onerror = () => setSpeaking(false);
       setSpeaking(true);
@@ -70,7 +72,7 @@ export function useTts() {
         Math.max(12000, Math.min(120000, text.length * 420)),
       );
     },
-    [supported, hasVoices, zh, rate],
+    [supported, hasVoices, target, rate, lang],
   );
 
   const cycleRate = useCallback(() => {

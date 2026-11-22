@@ -302,13 +302,20 @@ reviewRouter.post(
   '/reviews/from-interview/:id',
   ah(async (req, res) => {
     const interviewId = idOf(req);
+    // FUNC-13：可选把追问也沉淀成复盘；默认只取主问题，保持旧行为。
+    const includeFollowups = req.body?.includeFollowups === true;
     const turns = db
-      .prepare('SELECT * FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL AND depth = 0 ORDER BY seq ASC')
+      .prepare(
+        `SELECT * FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL ${
+          includeFollowups ? '' : 'AND depth = 0'
+        } ORDER BY seq ASC`,
+      )
       .all(interviewId) as {
       question: string;
       answer: string;
       feedback_json: string | null;
       score: number | null;
+      depth: number;
     }[];
     if (!turns.length) throw new HttpError(400, '这场面试还没有作答记录');
     const iv = db.prepare('SELECT job_id FROM interview WHERE id = ?').get(interviewId) as
@@ -336,7 +343,7 @@ reviewRouter.post(
         `得分 ${score}。${fb.summary || ''}`,
         (fb.issues || []).slice(0, 2).join('；') || '补充可量化的结果。',
         score >= 85 ? 5 : score >= 70 ? 4 : score >= 55 ? 3 : 2,
-        '模拟面试',
+        t.depth > 0 ? '模拟面试·追问' : '模拟面试',
         nowIso(),
       );
       created += 1;
