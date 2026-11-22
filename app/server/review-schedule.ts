@@ -79,28 +79,49 @@ function seedForReview(row: { rating: number; created_at: string }): Seed {
   return { stage: 2, dueAt: addDays(base, REVIEW_LADDER[2]) };
 }
 
-/** 给还没进排程的历史题目补一条任务；已有任务不动。 */
+/**
+ * 给还没进排程的历史题目补一条任务；已有任务不动。
+ *
+ * 只查「缺失项」而不是全表重扫后逐条 INSERT OR IGNORE：
+ * - 这个函数会在打开题库 / 复习计划 / 求职档案时被调用，不能把读页面变成写事务；
+ * - `review_task(kind, ref_id)` 是主键，NOT EXISTS 可以走索引。
+ */
 export function ensureReviewTasks(): void {
+  const now = nowIso();
   const insert = db.prepare(
     'INSERT OR IGNORE INTO review_task (kind, ref_id, stage, due_at, last_reviewed_at, reps, lapses, updated_at) VALUES (?, ?, ?, ?, NULL, 0, 0, ?)',
   );
-  const now = nowIso();
+
   const banks = db
-    .prepare('SELECT id, question, weak, last_practiced_at, created_at FROM bank_item')
-    .all() as { id: number; question: string; weak: number; last_practiced_at: string | null; created_at: string }[];
-  const bankQuestions = new Set(banks.map((b) => b.question.trim()));
+    .prepare(
+      `SELECT b.id, b.weak, b.last_practiced_at, b.created_at
+       FROM bank_item b
+       WHERE NOT EXISTS (
+         SELECT 1 FROM review_task t WHERE t.kind = 'bank' AND t.ref_id = b.id
+       )`,
+    )
+    .all() as { id: number; weak: number; last_practiced_at: string | null; created_at: string }[];
   for (const b of banks) {
     const seed = seedForBank(b);
     insert.run('bank', b.id, seed.stage, seed.dueAt, now);
   }
-  const reviews = db.prepare('SELECT id, question, rating, created_at FROM review').all() as {
-    id: number;
-    question: string;
-    rating: number;
-    created_at: string;
-  }[];
+
+  // 同名题目已进题库时不再重复排期，避免「今日待复习」出现同一道题两次。
+  const bankQuestions = new Set(
+    (db.prepare('SELECT DISTINCT question FROM bank_item').all() as { question: string }[]).map((r) =>
+      r.question.trim(),
+    ),
+  );
+  const reviews = db
+    .prepare(
+      `SELECT r.id, r.question, r.rating, r.created_at
+       FROM review r
+       WHERE NOT EXISTS (
+         SELECT 1 FROM review_task t WHERE t.kind = 'review' AND t.ref_id = r.id
+       )`,
+    )
+    .all() as { id: number; question: string; rating: number; created_at: string }[];
   for (const r of reviews) {
-    // 同名题目已进题库时不再重复排期，避免「今日待复习」出现同一道题两次。
     if (bankQuestions.has(r.question.trim())) continue;
     const seed = seedForReview(r);
     insert.run('review', r.id, seed.stage, seed.dueAt, now);

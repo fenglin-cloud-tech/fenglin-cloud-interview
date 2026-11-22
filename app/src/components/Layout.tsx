@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useApp } from '../state';
+import { giveAiConsent, hasAiConsent } from '../lib/consent';
 import { lockBodyScroll } from '../lib/scrollLock';
 import { DemoTour } from './DemoTour';
 
@@ -67,6 +68,7 @@ export function Layout() {
   const { activeResume, activeJob, resumes, jobs, setActiveResume, setActiveJob, aiConfigured, sharedDemo, toasts, dismissToast } =
     useApp();
   const [open, setOpen] = useState(false);
+  const [aiConsent, setAiConsent] = useState(() => hasAiConsent());
   const asideRef = useRef<HTMLElement>(null);
   const location = useLocation();
 
@@ -181,6 +183,22 @@ export function Layout() {
         {sharedDemo && (
           <div className="demo-banner">
             公网演示实例：所有访问者共享同一份数据，实例重启后数据会清空，请勿填写真实隐私信息。
+          </div>
+        )}
+        {!aiConsent && (
+          <div className="demo-banner" role="status">
+            使用 AI 功能前，请确认会将简历、JD 与作答内容发送给模型服务；不会上传到其他第三方。
+            <NavLink to="/privacy">查看隐私说明</NavLink>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                giveAiConsent();
+                setAiConsent(true);
+              }}
+            >
+              同意并继续
+            </button>
           </div>
         )}
         <header className="topbar">

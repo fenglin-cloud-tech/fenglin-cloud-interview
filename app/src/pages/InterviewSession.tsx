@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError } from '../api';
+import { api, ApiError, type AnswerJobResult, type FinishJobResult } from '../api';
 import type { Session, Turn } from '../types';
 import { ROUND_LABEL, elapsed, formatDateTime } from '../lib/format';
 import { useSpeech } from '../lib/speech';
@@ -17,6 +17,32 @@ import {
   SourceBadge,
 } from '../components/ui';
 import { useApp } from '../state';
+
+const DRAFT_PREFIX = 'fenglin:answer';
+
+function draftKey(interviewId: number, turnId: number): string {
+  return `${DRAFT_PREFIX}:${interviewId}:${turnId}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** 后端把长任务改成 202 + 轮询；这里只轮询轻量状态接口，不占用网关长连接。 */
+async function pollInterviewJob<T>(interviewId: number, jobId: string): Promise<T> {
+  const started = Date.now();
+  let delay = 700;
+  while (Date.now() - started < 6 * 60 * 1000) {
+    await sleep(delay);
+    const job = await api.interviewJob<T>(interviewId, jobId);
+    if (job.status === 'done') return job.result;
+    if (job.status === 'error') {
+      throw new ApiError(503, job.error?.message || '任务执行失败，请重试', job.error?.code || 'JOB_FAILED', job.error?.detail);
+    }
+    delay = Math.min(3000, delay + 400);
+  }
+  throw new ApiError(504, '任务仍在处理中，请稍后刷新页面查看结果', 'JOB_TIMEOUT');
+}
 
 export function InterviewSession() {
   const { id } = useParams();
@@ -72,21 +98,36 @@ export function InterviewSession() {
   );
 
   const tts = useTts();
-  const [timer, setTimer] = useState<{ turnId: number; left: number } | null>(null);
+  const [timer, setTimer] = useState<{ turnId: number; startedAt: number } | null>(null);
   const [timedOutEmpty, setTimedOutEmpty] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const answerRef = useRef(answer);
   answerRef.current = answer;
   const timeoutRef = useRef<number | null>(null);
 
   const activeTurn: Turn | null = session?.pendingTurn ?? null;
+  const limit = limitFor(activeTurn?.round_key);
+  // 用真实开始时间计算剩余秒数；后台标签页的定时器被节流也不会把倒计时算慢。
+  const left =
+    timer && activeTurn && timer.turnId === activeTurn.id
+      ? Math.max(0, limit - Math.floor((now - timer.startedAt) / 1000))
+      : limit;
 
   useEffect(() => {
     if (activeTurn) {
-      setAnswer('');
+      let saved = '';
+      try {
+        saved = window.localStorage.getItem(draftKey(ivId, activeTurn.id)) || '';
+      } catch {
+        /* 隐私模式下 localStorage 可能不可用 */
+      }
+      setAnswer(saved);
+      setDraftRestored(!!saved);
       setAllDone(false);
       setSubmitError(null);
       bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTurn?.id]);
 
   // 换题即重置计时与朗读状态；题干变化时不会沿用上一题的剩余时间
@@ -95,12 +136,28 @@ export function InterviewSession() {
       setTimer(null);
       return;
     }
-    setTimer({ turnId: activeTurn.id, left: limitFor(activeTurn.round_key) });
+    setTimer({ turnId: activeTurn.id, startedAt: Date.now() });
     setTimedOutEmpty(false);
     timeoutRef.current = null;
     tts.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTurn?.id]);
+
+  // 作答草稿本地保存：刷新、误关页面或切到别的页面后回来还能继续写。
+  useEffect(() => {
+    if (!activeTurn) return;
+    const key = draftKey(ivId, activeTurn.id);
+    const text = answer;
+    const handle = window.setTimeout(() => {
+      try {
+        if (text.trim()) window.localStorage.setItem(key, text);
+        else window.localStorage.removeItem(key);
+      } catch {
+        /* localStorage 不可用时静默降级 */
+      }
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [answer, activeTurn?.id, ivId]);
 
   const submit = async (opts: { auto?: boolean } = {}) => {
     if (!activeTurn) return;
@@ -109,14 +166,23 @@ export function InterviewSession() {
       if (!opts.auto) toast('先写几句再提交', 'err');
       return;
     }
+    const submittedTurnId = activeTurn.id;
+    const key = draftKey(ivId, submittedTurnId);
     tts.stop();
     setSubmitting(true);
     setSubmitStart(Date.now());
     setSubmitError(null);
     try {
-      const res = await api.answer(ivId, { turnId: activeTurn.id, answer: text });
+      const started = await api.answer(ivId, { turnId: submittedTurnId, answer: text });
+      const res = await pollInterviewJob<AnswerJobResult>(ivId, started.jobId);
       setSession(res.session);
       setAllDone(res.allDone);
+      setDraftRestored(false);
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
       window.setTimeout(
         () => feedbackRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' }),
         120,
@@ -125,6 +191,15 @@ export function InterviewSession() {
         toast('所有轮次已完成，可以生成报告', 'ok');
       }
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // 另一个并发请求已经提交过这道题，刷新拿最新状态即可。
+        try {
+          window.localStorage.removeItem(key);
+        } catch {
+          /* ignore */
+        }
+        load();
+      }
       setSubmitError(e instanceof ApiError ? e.message : '提交失败');
       toast(e instanceof ApiError ? e.message : '提交失败', 'err');
     } finally {
@@ -163,7 +238,10 @@ export function InterviewSession() {
     setFinishStart(Date.now());
     setFinishError(null);
     try {
-      await api.finishInterview(ivId);
+      const res = await api.finishInterview(ivId);
+      if ('jobId' in res) {
+        await pollInterviewJob<FinishJobResult>(ivId, res.jobId);
+      }
       await refreshJobs();
       navigate(`/interviews/${ivId}/report`);
     } catch (e) {
@@ -174,31 +252,23 @@ export function InterviewSession() {
     }
   };
 
-  // 限时：每秒递减，到点自动提交已写内容；未作答时只提示，不提交空答案
+  // 限时：按真实开始时间计算剩余秒数；到点自动提交已写内容，未作答时只提示。
   useEffect(() => {
     if (!activeTurn || submitting || !timer || timer.turnId !== activeTurn.id) return;
-    if (timer.left <= 0) {
-      if (timeoutRef.current === activeTurn.id) return;
-      timeoutRef.current = activeTurn.id;
-      const text = answerRef.current.trim();
-      if (text.length >= 2) {
-        toast('时间到，已自动提交当前作答内容', 'ok');
-        void submit({ auto: true });
-      } else {
-        setTimedOutEmpty(true);
-        toast('时间到：本题还没有有效作答，未自动提交', 'err');
-      }
-      return;
+    if (left > 0) return;
+    if (timeoutRef.current === activeTurn.id) return;
+    timeoutRef.current = activeTurn.id;
+    const text = answerRef.current.trim();
+    if (text.length >= 2) {
+      toast('时间到，已自动提交当前作答内容', 'ok');
+      void submit({ auto: true });
+    } else {
+      setTimedOutEmpty(true);
+      toast('时间到：本题还没有有效作答，未自动提交', 'err');
     }
-    const t = window.setTimeout(() => {
-      setTimer((prev) => (prev && prev.turnId === activeTurn.id ? { ...prev, left: prev.left - 1 } : prev));
-    }, 1000);
-    return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timer, activeTurn?.id, submitting]);
+  }, [left, timer, activeTurn?.id, submitting]);
 
-  const limit = limitFor(activeTurn?.round_key);
-  const left = timer && activeTurn && timer.turnId === activeTurn.id ? timer.left : limit;
   const expired = !!activeTurn && left <= 0;
 
   if (loading) {
@@ -393,6 +463,9 @@ export function InterviewSession() {
                       ? '本题已超时，但作答内容过短，未自动提交；确认后可以手动提交。'
                       : '本题已超时，且没有任何作答内容，因此没有自动提交；可以继续写完再手动提交。'}
                   </Callout>
+                )}
+                {draftRestored && !submitting && (
+                  <Callout tone="info">已恢复上次未提交的草稿；提交成功后会自动清除。</Callout>
                 )}
                 {speech.error && <Callout tone="warn">{speech.error}</Callout>}
                 {submitting && (

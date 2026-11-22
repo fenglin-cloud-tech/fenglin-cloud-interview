@@ -166,10 +166,16 @@ CREATE TABLE IF NOT EXISTS setting (
 
 CREATE INDEX IF NOT EXISTS idx_task_due ON review_task(due_at);
 CREATE INDEX IF NOT EXISTS idx_turn_interview ON interview_turn(interview_id, seq);
+CREATE INDEX IF NOT EXISTS idx_turn_answered ON interview_turn(interview_id, seq) WHERE answer IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_bank_category ON bank_item(category, weak);
+CREATE INDEX IF NOT EXISTS idx_bank_question ON bank_item(question);
 CREATE INDEX IF NOT EXISTS idx_review_created ON review(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_job ON review(job_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_interview_status ON interview(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jd_resume ON jd_analysis(resume_id, id);
 CREATE INDEX IF NOT EXISTS idx_application_stage ON application(stage, applied_on DESC);
 CREATE INDEX IF NOT EXISTS idx_applink_app ON application_link(application_id);
+CREATE INDEX IF NOT EXISTS idx_applink_ref ON application_link(ref_id);
 `;
 
 type SqlValue = number | string | Uint8Array | null;
@@ -295,8 +301,9 @@ export const db = {
         if (params.length) st.bind(normalizeParams(params) as BindParams);
         st.step();
         st.reset();
-        markDirty();
         const changes = raw.getRowsModified();
+        // 只读查询和 INSERT OR IGNORE 的无效写入不应触发全库导出。
+        if (changes > 0) markDirty();
         const idRow = raw.exec('SELECT last_insert_rowid() AS id');
         const lastInsertRowid = Number(idRow[0]?.values[0]?.[0] ?? 0);
         return { changes, lastInsertRowid };

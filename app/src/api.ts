@@ -1,3 +1,4 @@
+import { hasAiConsent } from './lib/consent';
 import type {
   ApplicationRecord,
   ApplicationStage,
@@ -36,7 +37,42 @@ export class ApiError extends Error {
   }
 }
 
+export interface InterviewJobError {
+  code: string;
+  message: string;
+  detail?: string;
+}
+
+export type InterviewJobResponse<T> =
+  | { status: 'pending' }
+  | { status: 'done'; result: T }
+  | { status: 'error'; error?: InterviewJobError };
+
+export interface AnswerJobResult {
+  feedback: FeedbackResult;
+  source: string;
+  score: number;
+  nextTurn: Session['turns'][number] | null;
+  allDone: boolean;
+  session: Session;
+}
+
+export interface FinishJobResult {
+  report: ReportResult;
+  source?: string;
+  session: Session;
+}
+
+function needsAiConsent(path: string): boolean {
+  if (path === '/ai/status') return false;
+  if (path.startsWith('/ai/')) return true;
+  return /^\/interviews\/\d+\/(answer|finish)$/.test(path);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (needsAiConsent(path) && !hasAiConsent()) {
+    throw new ApiError(428, '首次使用 AI 前，请先在页面顶部阅读并同意数据外发提示', 'AI_CONSENT_REQUIRED');
+  }
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
@@ -256,16 +292,11 @@ export const api = {
   }) => post<Session>('/interviews', body),
   session: (id: number) => request<Session>(`/interviews/${id}`),
   answer: (id: number, body: { turnId: number; answer: string }) =>
-    post<{
-      feedback: FeedbackResult;
-      source: string;
-      score: number;
-      nextTurn: Session['turns'][number] | null;
-      allDone: boolean;
-      session: Session;
-    }>(`/interviews/${id}/answer`, body),
+    post<{ jobId: string; status: 'pending' }>(`/interviews/${id}/answer`, body),
+  interviewJob: <T>(id: number, jobId: string) =>
+    request<InterviewJobResponse<T>>(`/interviews/${id}/jobs/${jobId}`),
   finishInterview: (id: number) =>
-    post<{ report: ReportResult; source?: string; session: Session }>(`/interviews/${id}/finish`),
+    post<{ jobId: string; status: 'pending' } | FinishJobResult>(`/interviews/${id}/finish`),
   deleteInterview: (id: number) => del<{ ok: boolean }>(`/interviews/${id}`),
 
   reviews: (q?: string) => request<{ reviews: ReviewItem[] }>(`/reviews${q ? `?q=${encodeURIComponent(q)}` : ''}`),

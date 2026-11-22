@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { db, nowIso, parseJson } from '../db.js';
 import { chatJSON, LlmError } from '../llm.js';
 import { localFeedback, localQuestion } from '../fallback.js';
@@ -50,6 +51,65 @@ interface TurnRow {
   source: string;
   created_at: string;
   answered_at: string | null;
+}
+
+/**
+ * 单题反馈 / 面试报告都是长任务：网关约 30s 截断，不能继续在 HTTP 请求里同步等待。
+ * 这里沿用 /ai/suggestions 的「202 + 轮询」模式；任务只保存在当前进程内存中，
+ * 与当前单实例 SQLite 数据模型一致，重启后需要重新提交。
+ */
+interface InterviewJob {
+  status: 'pending' | 'done' | 'error';
+  kind: 'answer' | 'finish';
+  startedAt: number;
+  interviewId: number;
+  result?: unknown;
+  error?: { code: string; message: string; detail?: string };
+}
+
+const interviewJobs = new Map<string, InterviewJob>();
+const INTERVIEW_JOB_TTL_MS = 10 * 60 * 1000;
+
+function sweepInterviewJobs(): void {
+  const now = Date.now();
+  for (const [jobId, job] of interviewJobs) {
+    if (now - job.startedAt > INTERVIEW_JOB_TTL_MS) interviewJobs.delete(jobId);
+  }
+}
+
+function jobErrorOf(err: unknown): { code: string; message: string; detail?: string } {
+  if (err instanceof HttpError) {
+    return { code: err.code, message: err.message, detail: err.detail };
+  }
+  if (err instanceof LlmError) {
+    return { code: err.code, message: err.message, detail: err.detail };
+  }
+  console.error('[interview] 异步任务失败:', err instanceof Error ? err.stack : err);
+  return { code: 'INTERNAL', message: '任务执行失败，请重试' };
+}
+
+function hasPendingJob(interviewId: number, kind: InterviewJob['kind']): boolean {
+  for (const job of interviewJobs.values()) {
+    if (job.interviewId === interviewId && job.kind === kind && job.status === 'pending') return true;
+  }
+  return false;
+}
+
+function startInterviewJob<T>(interviewId: number, kind: InterviewJob['kind'], task: () => Promise<T>): string {
+  sweepInterviewJobs();
+  const jobId = randomUUID();
+  const job: InterviewJob = { status: 'pending', kind, startedAt: Date.now(), interviewId };
+  interviewJobs.set(jobId, job);
+  void (async () => {
+    try {
+      job.result = await task();
+      job.status = 'done';
+    } catch (err) {
+      job.status = 'error';
+      job.error = jobErrorOf(err);
+    }
+  })();
+  return jobId;
 }
 
 function getInterview(id: number): InterviewRow {
@@ -348,6 +408,118 @@ interviewRouter.post(
   }),
 );
 
+async function runAnswerJob(id: number, turnId: number, answer: string) {
+  let iv = getInterview(id);
+  if (iv.status !== 'active') throw new HttpError(409, '这场面试已经结束');
+  const turn = db
+    .prepare('SELECT * FROM interview_turn WHERE id = ? AND interview_id = ?')
+    .get(turnId, id) as TurnRow | undefined;
+  if (!turn) throw new HttpError(404, '题目不存在');
+  if (turn.answer !== null) throw new HttpError(409, '这道题已经作答过了');
+
+  let feedback: FeedbackResult;
+  let source: 'llm' | 'local' = 'llm';
+  try {
+    const { data } = await chatJSON(
+      feedbackSchema,
+      feedbackPrompt({
+        roundKey: turn.round_key,
+        question: turn.question,
+        answer,
+        jobTitle: jobTitleOf(iv.job_id),
+        depth: turn.depth,
+      }),
+      { tag: `feedback-${turn.round_key}`, temperature: 0.4, maxTokens: 1800 },
+    );
+    feedback = data;
+  } catch (err) {
+    const e = err as LlmError;
+    console.warn(`[interview] 反馈降级 ${e.code}: ${e.message}`);
+    feedback = localFeedback({ roundKey: turn.round_key, question: turn.question, answer });
+    source = 'local';
+  }
+
+  // 用 STAR 覆盖、量化数据、个人贡献、篇幅等可观察证据校准模型分，避免不同质量的回答都落在 75 附近
+  const signals = analyzeAnswer(turn.question, answer);
+  feedback.scores = calibrateScores(signals, feedback.scores);
+  const score = Math.round((feedback.scores.structure + feedback.scores.content + feedback.scores.expression) / 3);
+  const answeredCount = db
+    .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL')
+    .get(id) as { n: number };
+  // 追问：最多 2 层，方向限定为项目细节 / 数据来源 / 个人贡献
+  // 只有回答偏弱（低于阈值）时才追问，避免每道题都追问；并限制总题量
+  const followable =
+    turn.round_key === 'professional' || turn.round_key === 'behavioral' || turn.round_key === 'practice';
+  const canFollow = followable && turn.depth < 2 && score < FOLLOWUP_THRESHOLD && answeredCount.n + 1 < 18;
+  if (canFollow && !feedback.followup) {
+    // 模型有时只评不追问；这里用规则补一个方向明确的追问，保证弱回答能稳定触发
+    feedback.followup = buildFallbackFollowup({
+      signals,
+      scores: feedback.scores,
+      depth: turn.depth,
+    });
+  }
+
+  // source 同时承担「题目来源」语义：常见题答完后仍保留 common，避免前端丢失来源标注；
+  // 其他题型沿用原有行为，记录反馈是模型还是本地降级。
+  const sourceAfterAnswer = turn.source === 'common' ? 'common' : source;
+  // 原子占位：并发提交时只有一个请求能把 NULL 改成答案，避免重复生成下一题。
+  const claimed = db
+    .prepare(
+      'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ? WHERE id = ? AND interview_id = ? AND answer IS NULL',
+    )
+    .run(answer, JSON.stringify(feedback), score, sourceAfterAnswer, nowIso(), turnId, id);
+  if (claimed.changes === 0) throw new HttpError(409, '这道题已经作答过了');
+
+  // 用最新状态推进轮次，避免请求开始时读到的 question_index 过期。
+  iv = getInterview(id);
+  // 反馈生成期间用户可能已经点了「生成报告」；此时不要再补一道新题。
+  if (iv.status !== 'active') {
+    return { feedback, source, score, nextTurn: null, allDone: true, session: sessionPayload(id) };
+  }
+  let nextTurn: TurnRow | null = null;
+  let allDone = false;
+  if (canFollow && feedback.followup) {
+    nextTurn = insertTurn(
+      id,
+      turn.round_key,
+      nextSeq(id),
+      turn.depth + 1,
+      turnId,
+      feedback.followup.question,
+      feedback.followup.focus,
+      source,
+    );
+  } else {
+    const plan = planFor(iv);
+    const idx = plan.findIndex((r) => r.key === iv.round_key);
+    const round = plan[idx] || plan[0];
+    const nextIndex = iv.question_index + 1;
+    if (nextIndex < round.count) {
+      const q = await makeQuestion(iv, round.key);
+      if (getInterview(id).status !== 'active') {
+        allDone = true;
+      } else {
+        nextTurn = insertTurn(id, round.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
+        db.prepare('UPDATE interview SET question_index = ? WHERE id = ?').run(nextIndex, id);
+      }
+    } else if (idx + 1 < plan.length) {
+      const nr = plan[idx + 1];
+      const q = await makeQuestion(iv, nr.key);
+      if (getInterview(id).status !== 'active') {
+        allDone = true;
+      } else {
+        db.prepare('UPDATE interview SET round_key = ?, question_index = 0 WHERE id = ?').run(nr.key, id);
+        nextTurn = insertTurn(id, nr.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
+      }
+    } else {
+      allDone = true;
+    }
+  }
+
+  return { feedback, source, score, nextTurn, allDone, session: sessionPayload(id) };
+}
+
 interviewRouter.post(
   '/interviews/:id/answer',
   ah(async (req, res) => {
@@ -363,92 +535,27 @@ interviewRouter.post(
       .get(turnId, id) as TurnRow | undefined;
     if (!turn) throw new HttpError(404, '题目不存在');
     if (turn.answer !== null) throw new HttpError(409, '这道题已经作答过了');
+    if (hasPendingJob(id, 'finish')) throw new HttpError(409, '报告正在生成，暂时不能继续作答');
 
-    let feedback: FeedbackResult;
-    let source: 'llm' | 'local' = 'llm';
-    try {
-      const { data } = await chatJSON(
-        feedbackSchema,
-        feedbackPrompt({
-          roundKey: turn.round_key,
-          question: turn.question,
-          answer,
-          jobTitle: jobTitleOf(iv.job_id),
-          depth: turn.depth,
-        }),
-        { tag: `feedback-${turn.round_key}`, temperature: 0.4, maxTokens: 1800 },
-      );
-      feedback = data;
-    } catch (err) {
-      const e = err as LlmError;
-      console.warn(`[interview] 反馈降级 ${e.code}: ${e.message}`);
-      feedback = localFeedback({ roundKey: turn.round_key, question: turn.question, answer });
-      source = 'local';
-    }
-
-    // 用 STAR 覆盖、量化数据、个人贡献、篇幅等可观察证据校准模型分，避免不同质量的回答都落在 75 附近
-    const signals = analyzeAnswer(turn.question, answer);
-    feedback.scores = calibrateScores(signals, feedback.scores);
-    const score = Math.round((feedback.scores.structure + feedback.scores.content + feedback.scores.expression) / 3);
-    const answeredCount = db
-      .prepare('SELECT COUNT(*) AS n FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL')
-      .get(id) as { n: number };
-    // 追问：最多 2 层，方向限定为项目细节 / 数据来源 / 个人贡献
-    // 只有回答偏弱（低于阈值）时才追问，避免每道题都追问；并限制总题量
-    const followable =
-      turn.round_key === 'professional' || turn.round_key === 'behavioral' || turn.round_key === 'practice';
-    const canFollow = followable && turn.depth < 2 && score < FOLLOWUP_THRESHOLD && answeredCount.n + 1 < 18;
-    if (canFollow && !feedback.followup) {
-      // 模型有时只评不追问；这里用规则补一个方向明确的追问，保证弱回答能稳定触发
-      feedback.followup = buildFallbackFollowup({
-        signals,
-        scores: feedback.scores,
-        depth: turn.depth,
-      });
-    }
-
-    // source 同时承担「题目来源」语义：常见题答完后仍保留 common，避免前端丢失来源标注；
-    // 其他题型沿用原有行为，记录反馈是模型还是本地降级。
-    const sourceAfterAnswer = turn.source === 'common' ? 'common' : source;
-    db.prepare(
-      'UPDATE interview_turn SET answer = ?, feedback_json = ?, score = ?, source = ?, answered_at = ? WHERE id = ?',
-    ).run(answer, JSON.stringify(feedback), score, sourceAfterAnswer, nowIso(), turnId);
-
-    let nextTurn: TurnRow | null = null;
-    let allDone = false;
-    if (canFollow && feedback.followup) {
-      nextTurn = insertTurn(
-        id,
-        turn.round_key,
-        nextSeq(id),
-        turn.depth + 1,
-        turnId,
-        feedback.followup.question,
-        feedback.followup.focus,
-        source,
-      );
-    } else {
-      const plan = planFor(iv);
-      const idx = plan.findIndex((r) => r.key === iv.round_key);
-      const round = plan[idx] || plan[0];
-      const nextIndex = iv.question_index + 1;
-      if (nextIndex < round.count) {
-        const q = await makeQuestion(iv, round.key);
-        nextTurn = insertTurn(id, round.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
-        db.prepare('UPDATE interview SET question_index = ? WHERE id = ?').run(nextIndex, id);
-      } else if (idx + 1 < plan.length) {
-        const nr = plan[idx + 1];
-        db.prepare('UPDATE interview SET round_key = ?, question_index = 0 WHERE id = ?').run(nr.key, id);
-        const q = await makeQuestion(iv, nr.key);
-        nextTurn = insertTurn(id, nr.key, nextSeq(id), 0, null, q.question, q.focus, q.source);
-      } else {
-        allDone = true;
-      }
-    }
-
-    res.json({ feedback, source, score, nextTurn, allDone, session: sessionPayload(id) });
+    const jobId = startInterviewJob(id, 'answer', () => runAnswerJob(id, turnId, answer));
+    res.status(202).json({ jobId, status: 'pending' });
   }),
 );
+
+interviewRouter.get('/interviews/:id/jobs/:jobId', (req, res) => {
+  const id = idOf(req);
+  const job = interviewJobs.get(String(req.params.jobId));
+  if (!job || job.interviewId !== id) throw new HttpError(404, '任务不存在或已过期，请重新提交');
+  if (job.status === 'pending') {
+    res.json({ status: 'pending' });
+    return;
+  }
+  if (job.status === 'error') {
+    res.json({ status: 'error', error: job.error });
+    return;
+  }
+  res.json({ status: 'done', result: job.result });
+});
 
 function localReport(turns: TurnRow[]): ReportResult {
   const byRound = new Map<string, number[]>();
@@ -484,53 +591,64 @@ function localReport(turns: TurnRow[]): ReportResult {
   };
 }
 
-interviewRouter.post(
-  '/interviews/:id/finish',
-  ah(async (req, res) => {
-    const id = idOf(req);
-    const iv = getInterview(id);
-    if (iv.status === 'finished' && iv.report_json) {
-      res.json({ report: parseJson<ReportResult | null>(iv.report_json, null), session: sessionPayload(id) });
-      return;
-    }
-    const turns = turnsOf(id).filter((t) => t.answer !== null);
-    if (!turns.length) throw new HttpError(400, '还没有任何作答，无法生成报告');
+async function runFinishJob(id: number) {
+  const iv = getInterview(id);
+  if (iv.status === 'finished' && iv.report_json) {
+    return { report: parseJson<ReportResult | null>(iv.report_json, null), source: 'llm', session: sessionPayload(id) };
+  }
+  if (iv.status !== 'active') throw new HttpError(409, '这场面试状态已变化，请刷新后重试');
 
-    let report: ReportResult;
-    let source: 'llm' | 'local' = 'llm';
-    try {
-      const { data } = await chatJSON(
-        reportSchema,
-        reportPrompt({
-          jobTitle: jobTitleOf(iv.job_id),
-          turns: turns.map((t) => ({
-            round: roundByKey(t.round_key).name,
-            question: t.question,
-            answer: t.answer || '',
-            score: t.score,
-            depth: t.depth,
-          })),
-        }),
-        { tag: 'report', temperature: 0.4, maxTokens: 1800 },
-      );
-      report = data;
-    } catch (err) {
-      const e = err as LlmError;
-      console.warn(`[interview] 报告降级 ${e.code}: ${e.message}`);
-      report = localReport(turns);
-      source = 'local';
-    }
+  const turns = turnsOf(id).filter((t) => t.answer !== null);
+  if (!turns.length) throw new HttpError(400, '还没有任何作答，无法生成报告');
 
-    db.prepare('UPDATE interview SET status = ?, ended_at = ?, report_json = ?, overall_score = ? WHERE id = ?').run(
-      'finished',
-      nowIso(),
-      JSON.stringify(report),
-      Math.round(report.overallScore),
-      id,
+  let report: ReportResult;
+  let source: 'llm' | 'local' = 'llm';
+  try {
+    const { data } = await chatJSON(
+      reportSchema,
+      reportPrompt({
+        jobTitle: jobTitleOf(iv.job_id),
+        turns: turns.map((t) => ({
+          round: roundByKey(t.round_key).name,
+          question: t.question,
+          answer: t.answer || '',
+          score: t.score,
+          depth: t.depth,
+        })),
+      }),
+      { tag: 'report', temperature: 0.4, maxTokens: 1800 },
     );
+    report = data;
+  } catch (err) {
+    const e = err as LlmError;
+    console.warn(`[interview] 报告降级 ${e.code}: ${e.message}`);
+    report = localReport(turns);
+    source = 'local';
+  }
+
+  db.exec('BEGIN');
+  try {
+    // 原子收口：并发生成报告时，只有一个请求能把 active 改成 finished。
+    const claimed = db
+      .prepare(
+        'UPDATE interview SET status = ?, ended_at = ?, report_json = ?, overall_score = ? WHERE id = ? AND status = ?',
+      )
+      .run('finished', nowIso(), JSON.stringify(report), Math.round(report.overallScore), id, 'active');
+    if (claimed.changes === 0) {
+      db.exec('ROLLBACK');
+      const latest = getInterview(id);
+      if (latest.status === 'finished' && latest.report_json) {
+        return {
+          report: parseJson<ReportResult | null>(latest.report_json, null),
+          source: 'llm',
+          session: sessionPayload(id),
+        };
+      }
+      throw new HttpError(409, '这场面试状态已变化，请刷新后重试');
+    }
 
     // 沉淀到个人题库：题目去重，记录最近一次得分与薄弱标记
-    const seedRows = iv.seed_json ? (JSON.parse(iv.seed_json) as string[]) : [];
+    const seedRows = iv.mode === 'bank' ? parseJson<string[]>(iv.seed_json, []) : [];
     for (const t of turns) {
       const category = roundByKey(t.round_key).name;
       const existing = db.prepare('SELECT id, ask_count FROM bank_item WHERE question = ?').get(t.question) as
@@ -552,13 +670,41 @@ interviewRouter.post(
         db.prepare('UPDATE bank_item SET last_practiced_at = ? WHERE question = ?').run(nowIso(), q);
       }
     }
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      /* 事务可能已经回滚 */
+    }
+    throw err;
+  }
 
-    res.json({ report, source, session: sessionPayload(id) });
+  return { report, source, session: sessionPayload(id) };
+}
+
+interviewRouter.post(
+  '/interviews/:id/finish',
+  ah(async (req, res) => {
+    const id = idOf(req);
+    const iv = getInterview(id);
+    if (iv.status === 'finished' && iv.report_json) {
+      res.json({ report: parseJson<ReportResult | null>(iv.report_json, null), session: sessionPayload(id) });
+      return;
+    }
+    if (iv.status !== 'active') throw new HttpError(409, '这场面试状态已变化，请刷新后重试');
+    const turns = turnsOf(id).filter((t) => t.answer !== null);
+    if (!turns.length) throw new HttpError(400, '还没有任何作答，无法生成报告');
+    if (hasPendingJob(id, 'answer')) throw new HttpError(409, '还有题目正在提交，请稍后再生成报告');
+
+    const jobId = startInterviewJob(id, 'finish', () => runFinishJob(id));
+    res.status(202).json({ jobId, status: 'pending' });
   }),
 );
 
 interviewRouter.delete('/interviews/:id', (req, res) => {
   const id = idOf(req);
+  db.prepare("DELETE FROM application_link WHERE kind = 'interview' AND ref_id = ?").run(id);
   db.prepare('DELETE FROM interview_turn WHERE interview_id = ?').run(id);
   db.prepare('DELETE FROM interview WHERE id = ?').run(id);
   res.json({ ok: true });

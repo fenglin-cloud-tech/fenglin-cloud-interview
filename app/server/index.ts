@@ -15,7 +15,63 @@ import { applicationsRouter } from './routes/applications.js';
 
 const app = express();
 app.disable('x-powered-by');
+// 线上由平台网关转发；开启单层 trust proxy 才能拿到真实客户端 IP。
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '16mb' }));
+
+/* 公网演示实例的模型调用保护：按 IP 每分钟限流 + 全实例每日上限。 */
+const aiBuckets = new Map<string, { count: number; resetAt: number }>();
+let aiDay = new Date().toDateString();
+let aiDayCount = 0;
+
+function clientIp(req: Request): string {
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim();
+  return first || req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+function needsAiLimit(pathname: string): boolean {
+  if (pathname === '/ai/status') return false;
+  if (pathname.startsWith('/ai/')) return true;
+  return /^\/interviews\/\d+\/(answer|finish)$/.test(pathname);
+}
+
+app.use('/api', (req, res, next) => {
+  if (!needsAiLimit(req.path)) {
+    next();
+    return;
+  }
+  const day = new Date().toDateString();
+  if (day !== aiDay) {
+    aiDay = day;
+    aiDayCount = 0;
+    aiBuckets.clear();
+  }
+  if (env.aiDailyLimit > 0 && aiDayCount >= env.aiDailyLimit) {
+    res.status(429).json({ error: { code: 'AI_DAILY_LIMIT', message: '今日 AI 调用额度已用完，请明天再试' } });
+    return;
+  }
+  const now = Date.now();
+  const ip = clientIp(req);
+  let bucket = aiBuckets.get(ip);
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + 60_000 };
+    aiBuckets.set(ip, bucket);
+  }
+  if (env.aiRateLimitPerMin > 0 && bucket.count >= env.aiRateLimitPerMin) {
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))));
+    res.status(429).json({
+      error: {
+        code: 'AI_RATE_LIMIT',
+        message: `AI 请求太频繁，请稍后再试（每分钟最多 ${env.aiRateLimitPerMin} 次）`,
+      },
+    });
+    return;
+  }
+  bucket.count += 1;
+  aiDayCount += 1;
+  next();
+});
 
 app.use('/api', coreRouter);
 app.use('/api', aiRouter);
@@ -40,8 +96,23 @@ const staticCandidates = [
 const distDir = staticCandidates.find((p) => fs.existsSync(path.join(p, 'index.html')));
 
 if (distDir) {
-  app.use(express.static(distDir, { index: false, maxAge: '1h' }));
+  app.use(
+    express.static(distDir, {
+      index: false,
+      setHeaders(res, filePath) {
+        // Vite 产物带内容哈希，可以放心长缓存；index.html 必须每次回源，避免旧壳引用已删除的 chunk。
+        if (/[\\/]assets[\\/]/.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+      },
+    }),
+  );
   app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(distDir, 'index.html'));
   });
 } else {

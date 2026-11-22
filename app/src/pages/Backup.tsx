@@ -37,10 +37,11 @@ export function Backup() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [mode, setMode] = useState<'merge' | 'overwrite' | null>(null);
+  const [overwriteBackedUp, setOverwriteBackedUp] = useState(false);
   const [importing, setImporting] = useState(false);
   const [done, setDone] = useState<{ mode: string; after: Record<string, number> } | null>(null);
 
-  const doExport = async () => {
+  const doExport = async (): Promise<boolean> => {
     setExporting(true);
     setExported(null);
     try {
@@ -55,8 +56,10 @@ export function Backup() {
       URL.revokeObjectURL(url);
       setExported({ filename: file.filename, bytes: file.bytes });
       toast('备份文件已生成并开始下载', 'ok');
+      return true;
     } catch (e) {
       toast(e instanceof Error ? e.message : '导出失败', 'err');
+      return false;
     } finally {
       setExporting(false);
     }
@@ -67,6 +70,7 @@ export function Backup() {
     setPreview(null);
     setPreviewError('');
     setMode(null);
+    setOverwriteBackedUp(false);
     setDone(null);
     setFilename('');
     if (fileRef.current) fileRef.current.value = '';
@@ -103,6 +107,10 @@ export function Backup() {
     if (!parsed || !preview) return;
     if (!preview.emptyTarget && !mode) {
       toast('请先选择合并还是覆盖', 'err');
+      return;
+    }
+    if (!preview.emptyTarget && mode === 'overwrite' && !overwriteBackedUp) {
+      toast('覆盖前请先导出当前数据，并勾选「我已备份」', 'err');
       return;
     }
     setImporting(true);
@@ -235,7 +243,10 @@ export function Backup() {
                         type="radio"
                         name="backup-mode"
                         checked={mode === 'merge'}
-                        onChange={() => setMode('merge')}
+                        onChange={() => {
+                          setMode('merge');
+                          setOverwriteBackedUp(false);
+                        }}
                       />
                       <span>
                         <b>合并（推荐）</b>
@@ -247,7 +258,10 @@ export function Backup() {
                         type="radio"
                         name="backup-mode"
                         checked={mode === 'overwrite'}
-                        onChange={() => setMode('overwrite')}
+                        onChange={() => {
+                          setMode('overwrite');
+                          setOverwriteBackedUp(false);
+                        }}
                       />
                       <span>
                         <b>覆盖</b>
@@ -256,11 +270,41 @@ export function Backup() {
                     </label>
                   </div>
                 )}
+                {!preview.emptyTarget && mode === 'overwrite' && (
+                  <Callout tone="warn">
+                    <div>覆盖会先清空当前所有数据，且不可撤销。请先生成并保存当前备份。</div>
+                    <div className="row gap-8 wrap">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={exporting}
+                        onClick={() => {
+                          void doExport().then((ok) => {
+                            if (ok) setOverwriteBackedUp(true);
+                          });
+                        }}
+                      >
+                        先导出当前数据
+                      </Button>
+                      <label className="row gap-8">
+                        <input
+                          type="checkbox"
+                          checked={overwriteBackedUp}
+                          onChange={(e) => setOverwriteBackedUp(e.target.checked)}
+                        />
+                        <span>我已下载并确认备份</span>
+                      </label>
+                    </div>
+                  </Callout>
+                )}
                 <div className="backup-actions">
                   <Button
                     onClick={() => void doImport()}
                     loading={importing}
-                    disabled={!preview.emptyTarget && !mode}
+                    disabled={
+                      (!preview.emptyTarget && !mode) ||
+                      (!preview.emptyTarget && mode === 'overwrite' && !overwriteBackedUp)
+                    }
                   >
                     {preview.emptyTarget ? '确认导入' : mode === 'overwrite' ? '确认覆盖导入' : '确认合并导入'}
                   </Button>

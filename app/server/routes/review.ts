@@ -98,6 +98,7 @@ reviewRouter.put('/reviews/:id', (req, res) => {
 
 reviewRouter.delete('/reviews/:id', (req, res) => {
   const id = idOf(req);
+  db.prepare("DELETE FROM application_link WHERE kind = 'review' AND ref_id = ?").run(id);
   db.prepare('DELETE FROM review WHERE id = ?').run(id);
   db.prepare("DELETE FROM review_task WHERE kind = 'review' AND ref_id = ?").run(id);
   res.json({ ok: true });
