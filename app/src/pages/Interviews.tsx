@@ -32,7 +32,12 @@ export function Interviews() {
 
   const [list, setList] = useState<InterviewListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterMode, setFilterMode] = useState('');
+  const [filterJobId, setFilterJobId] = useState<number | null>(null);
 
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [jobId, setJobId] = useState<number | null>(null);
@@ -44,20 +49,34 @@ export function Interviews() {
   const [starting, setStarting] = useState(false);
   const [confirmDel, setConfirmDel] = useState<InterviewListItem | null>(null);
 
-  const load = () => {
-    setLoading(true);
+  const load = (cursor?: number | null) => {
+    const appending = !!cursor;
+    if (appending) setLoadingMore(true);
+    else setLoading(true);
     setError(null);
     api
-      .interviews()
-      .then((r) => setList(r.interviews))
+      .interviews({
+        status: filterStatus || undefined,
+        mode: filterMode || undefined,
+        jobId: filterJobId,
+        cursor,
+        limit: 20,
+      })
+      .then((r) => {
+        setList((prev) => (appending ? [...prev, ...r.interviews] : r.interviews));
+        setNextCursor(r.nextCursor);
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
+      });
   };
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  }, [params, filterStatus, filterMode, filterJobId]);
 
   // 上下文是异步加载的：等简历/岗位到齐后再补默认值，避免一进来就点「开始」却提示未选简历
   useEffect(() => {
@@ -263,8 +282,45 @@ export function Interviews() {
           )}
         </Card>
 
-        <Card title="过去 50 场" subtitle="未完成的可以继续作答" className="history-card">
-          {error && <ErrorState message={error} onRetry={load} />}
+        <Card title="面试记录" subtitle="未完成的可以继续作答；列表按筛选分页加载" className="history-card">
+          <div className="row gap-8 wrap">
+            <select
+              className="input"
+              aria-label="按状态筛选面试"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">全部状态</option>
+              <option value="active">进行中</option>
+              <option value="finished">已完成</option>
+            </select>
+            <select
+              className="input"
+              aria-label="按出题方式筛选面试"
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value)}
+            >
+              <option value="">全部方式</option>
+              <option value="resume">只用简历题</option>
+              <option value="mixed">简历 + 常见题</option>
+              <option value="common">只用常见题</option>
+              <option value="bank">题库再练</option>
+            </select>
+            <select
+              className="input"
+              aria-label="按岗位筛选面试"
+              value={filterJobId ?? ''}
+              onChange={(e) => setFilterJobId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">全部岗位</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          {error && <ErrorState message={error} onRetry={() => load()} />}
           {loading && <PageSkeleton variant="cards" label="正在读取面试记录" />}
           {!loading && list.length === 0 && (
             <EmptyState icon="◷" title="还没有面试记录" desc="左边选好简历，点「开始面试」即可。" />
@@ -310,6 +366,13 @@ export function Interviews() {
               </li>
             ))}
           </ul>
+          {nextCursor && (
+            <div className="row gap-8" style={{ justifyContent: 'center', marginTop: 12 }}>
+              <Button size="sm" variant="quiet" loading={loadingMore} onClick={() => load(nextCursor)}>
+                加载更多
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
 

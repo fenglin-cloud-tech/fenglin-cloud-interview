@@ -25,6 +25,13 @@ export function Reviews() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
+  const [filterJobId, setFilterJobId] = useState<number | null>(null);
+  const [filterRating, setFilterRating] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ReviewItem | null>(null);
   const [form, setForm] = useState({ ...emptyForm, jobId: '' as string });
@@ -32,16 +39,33 @@ export function Reviews() {
   const [coaching, setCoaching] = useState(false);
   const [confirmDel, setConfirmDel] = useState<ReviewItem | null>(null);
 
-  const load = (keyword = q) => {
-    setLoading(true);
+  const load = (cursor?: number | null) => {
+    const appending = !!cursor;
+    if (appending) setLoadingMore(true);
+    else setLoading(true);
     setError(null);
     api
-      .reviews(keyword || undefined)
-      .then((r) => setItems(r.reviews))
+      .reviews({
+        q: q || undefined,
+        jobId: filterJobId,
+        rating: filterRating ? Number(filterRating) : null,
+        tag: filterTag || undefined,
+        from: filterFrom || undefined,
+        to: filterTo || undefined,
+        cursor,
+        limit: 20,
+      })
+      .then((r) => {
+        setItems((prev) => (appending ? [...prev, ...r.reviews] : r.reviews));
+        setNextCursor(r.nextCursor);
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setLoadingMore(false);
+      });
   };
-  useEffect(() => load(''), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => load(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCreate = () => {
     setForm({ ...emptyForm, jobId: activeJob?.id ? String(activeJob.id) : '' });
@@ -83,6 +107,7 @@ export function Reviews() {
           improvement: payload.improvement,
           rating: payload.rating,
           tags: payload.tags,
+          jobId: payload.jobId,
         });
         toast('复盘已更新', 'ok');
       } else {
@@ -197,13 +222,83 @@ export function Reviews() {
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && load()}
           />
+          <select
+            className="input"
+            aria-label="按岗位筛选复盘"
+            value={filterJobId ?? ''}
+            onChange={(e) => setFilterJobId(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">全部岗位</option>
+            {jobs.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.title}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            aria-label="按评分筛选复盘"
+            value={filterRating}
+            onChange={(e) => setFilterRating(e.target.value)}
+          >
+            <option value="">全部评分</option>
+            {[5, 4, 3, 2, 1].map((n) => (
+              <option key={n} value={n}>
+                {n} 星
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            aria-label="按标签筛选复盘"
+            placeholder="标签"
+            value={filterTag}
+            onChange={(e) => setFilterTag(e.target.value)}
+          />
+          <label className="row gap-8 small">
+            <span>日期</span>
+            <input
+              className="input"
+              type="date"
+              aria-label="复盘起始日期"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+            />
+            <span>至</span>
+            <input
+              className="input"
+              type="date"
+              aria-label="复盘结束日期"
+              value={filterTo}
+              onChange={(e) => setFilterTo(e.target.value)}
+            />
+          </label>
           <Button onClick={() => load()}>搜索</Button>
-          {q && (
-            <Button variant="quiet" onClick={() => { setQ(''); load(''); }}>
+          {(q || filterJobId || filterRating || filterTag || filterFrom || filterTo) && (
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setQ('');
+                setFilterJobId(null);
+                setFilterRating('');
+                setFilterTag('');
+                setFilterFrom('');
+                setFilterTo('');
+                setLoading(true);
+                api
+                  .reviews({ limit: 20 })
+                  .then((r) => {
+                    setItems(r.reviews);
+                    setNextCursor(r.nextCursor);
+                  })
+                  .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
+                  .finally(() => setLoading(false));
+              }}
+            >
               清空
             </Button>
           )}
-          <span className="muted small">共 {items.length} 条</span>
+          <span className="muted small">已加载 {items.length} 条</span>
         </div>
       </Card>
 
@@ -269,6 +364,13 @@ export function Reviews() {
           </Card>
         ))}
       </div>
+      {nextCursor && (
+        <div className="row gap-8" style={{ justifyContent: 'center', marginTop: 12 }}>
+          <Button size="sm" variant="quiet" loading={loadingMore} onClick={() => load(nextCursor)}>
+            加载更多
+          </Button>
+        </div>
+      )}
 
       <Modal
         open={open}

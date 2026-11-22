@@ -16,7 +16,12 @@ import { Router } from 'express';
 export const BACKUP_ROUTER = Router();
 
 const BACKUP_APP = 'fenglin-cloud-interview';
-const BACKUP_VERSION = 1;
+/**
+ * v2 起新增 application_stage_log，并给 resume / application 增加可选列。
+ * 导入仍接受 v1：旧备份缺失的字段按空值处理，不影响既有数据。
+ */
+const BACKUP_VERSION = 2;
+const SUPPORTED_VERSIONS = [1, 2];
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const LIMITS = {
   jobs: 2000,
@@ -29,6 +34,7 @@ const LIMITS = {
   reviewTasks: 20000,
   applications: 3000,
   applicationLinks: 10000,
+  applicationStageLog: 20000,
 };
 
 type Obj = Record<string, unknown>;
@@ -49,6 +55,7 @@ interface BackupFile {
     reviewTasks: Obj[];
     applications: Obj[];
     applicationLinks: Obj[];
+    applicationStageLog: Obj[];
   };
 }
 
@@ -134,6 +141,7 @@ function parseRows(file: BackupFile) {
     title: str(r.title, 200, `resumes[${i}].title`, true),
     content: str(r.content, 200_000, `resumes[${i}].content`),
     job_id: int(r.job_id, `resumes[${i}].job_id`, { min: 1, nullable: true }),
+    parent_id: int(r.parent_id, `resumes[${i}].parent_id`, { min: 1, nullable: true }),
     source: str(r.source, 40, `resumes[${i}].source`) || 'manual',
     created_at: isoish(r.created_at, `resumes[${i}].created_at`, true),
     updated_at: isoish(r.updated_at, `resumes[${i}].updated_at`, true),
@@ -230,6 +238,8 @@ function parseRows(file: BackupFile) {
       applied_on: appliedOn,
       stage,
       note: str(r.note, 5000, `applications[${i}].note`),
+      next_action_at: nullableStr(r.next_action_at, 10, `applications[${i}].next_action_at`),
+      next_action_note: str(r.next_action_note, 500, `applications[${i}].next_action_note`),
       created_at: isoish(r.created_at, `applications[${i}].created_at`, true),
       updated_at: isoish(r.updated_at, `applications[${i}].updated_at`, true),
     };
@@ -242,6 +252,20 @@ function parseRows(file: BackupFile) {
       kind,
       ref_id: int(r.ref_id, `applicationLinks[${i}].ref_id`, { min: 1 })!,
       created_at: isoish(r.created_at, `applicationLinks[${i}].created_at`, true),
+    };
+  });
+  const applicationStageLog = arr(d, 'applicationStageLog').map((r, i) => {
+    const from = nullableStr(r.from_stage, 20, `applicationStageLog[${i}].from_stage`);
+    const to = str(r.to_stage, 20, `applicationStageLog[${i}].to_stage`, true);
+    if (!APP_STAGES.includes(to)) throw bad(`applicationStageLog[${i}].to_stage 不是已知阶段`);
+    if (from && !APP_STAGES.includes(from)) throw bad(`applicationStageLog[${i}].from_stage 不是已知阶段`);
+    return {
+      id: int(r.id, `applicationStageLog[${i}].id`, { min: 1 })!,
+      application_id: int(r.application_id, `applicationStageLog[${i}].application_id`, { min: 1 })!,
+      from_stage: from,
+      to_stage: to,
+      note: str(r.note, 500, `applicationStageLog[${i}].note`),
+      changed_at: isoish(r.changed_at, `applicationStageLog[${i}].changed_at`, true),
     };
   });
 
@@ -266,6 +290,7 @@ function parseRows(file: BackupFile) {
       r.job_id = null;
       warnings.push('有简历关联的岗位不在备份中，已置空');
     }
+    if (r.parent_id && (!resumeIds.has(r.parent_id) || r.parent_id === r.id)) r.parent_id = null;
   }
   for (const a of jdAnalyses) {
     if (a.resume_id && !resumeIds.has(a.resume_id)) a.resume_id = null;
@@ -294,6 +319,8 @@ function parseRows(file: BackupFile) {
   for (const a of applications) {
     if (a.job_id && !jobIds.has(a.job_id)) a.job_id = null;
   }
+  const validStageLog = applicationStageLog.filter((l) => appIds.has(l.application_id));
+  if (validStageLog.length < applicationStageLog.length) warnings.push('有阶段历史指向备份中不存在的投递，已跳过');
   const seenLinks = new Set<string>();
   const validLinks = applicationLinks.filter((l) => {
     if (!appIds.has(l.application_id)) return false;
@@ -317,6 +344,7 @@ function parseRows(file: BackupFile) {
     reviewTasks: validTasks,
     applications,
     applicationLinks: validLinks,
+    applicationStageLog: validStageLog,
     warnings,
   };
 }
@@ -324,8 +352,11 @@ function parseRows(file: BackupFile) {
 function validate(raw: unknown): Validated {
   if (!isObj(raw)) throw bad('文件内容不是有效的备份对象');
   if (raw.app !== BACKUP_APP) throw bad('这不是丰麟云面的备份文件');
-  if (raw.version !== BACKUP_VERSION) {
-    throw bad(`备份版本为 ${String(raw.version)}，当前只支持版本 ${BACKUP_VERSION}；请更新应用或使用对应版本的备份`, 'VERSION_MISMATCH');
+  if (!SUPPORTED_VERSIONS.includes(Number(raw.version))) {
+    throw bad(
+      `备份版本为 ${String(raw.version)}，当前支持版本 ${SUPPORTED_VERSIONS.join(' / ')}；请更新应用或使用对应版本的备份`,
+      'VERSION_MISMATCH',
+    );
   }
   if (!isObj(raw.data)) throw bad('备份缺少 data 字段，文件可能已损坏');
   let profile: BackupFile['profile'] = null;
@@ -340,7 +371,7 @@ function validate(raw: unknown): Validated {
   }
   const file: BackupFile = {
     app: BACKUP_APP,
-    version: BACKUP_VERSION,
+    version: Number(raw.version),
     exportedAt: isoish(raw.exportedAt, 'exportedAt'),
     profile,
     data: raw.data as BackupFile['data'],
@@ -358,6 +389,7 @@ function validate(raw: unknown): Validated {
       reviewTasks: parsed.reviewTasks,
       applications: parsed.applications,
       applicationLinks: parsed.applicationLinks,
+      applicationStageLog: parsed.applicationStageLog,
     } },
     warnings: parsed.warnings,
   };
@@ -376,6 +408,7 @@ function countsOf(parsed: ReturnType<typeof parseRows>) {
     reviewTasks: parsed.reviewTasks.length,
     applications: parsed.applications.length,
     applicationLinks: parsed.applicationLinks.length,
+    applicationStageLog: parsed.applicationStageLog.length,
   };
 }
 
@@ -394,6 +427,7 @@ function currentCounts() {
     reviewTasks: one('review_task'),
     applications: one('application'),
     applicationLinks: one('application_link'),
+    applicationStageLog: one('application_stage_log'),
   };
 }
 
@@ -419,9 +453,11 @@ function normalizeQuestion(q: string): string {
 function clearAll(): void {
   // 清空示例数据标记与失效的选择状态，避免导入后仍显示“示例已载入”或指向不存在的 ID。
   db.prepare('DELETE FROM demo_seed').run();
+  db.prepare('DELETE FROM ai_job').run();
   db.prepare("DELETE FROM setting WHERE key IN ('demo_prev_profile', 'active_resume_id', 'active_job_id')").run();
   for (const t of [
     'application_link',
+    'application_stage_log',
     'application',
     'review_task',
     'interview_turn',
@@ -452,8 +488,12 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
   }
   for (const r of parsed.resumes) {
     db.prepare(
-      'INSERT INTO resume (id, title, content, job_id, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO resume (id, title, content, job_id, source, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)',
     ).run(r.id, r.title, r.content, r.job_id, r.source, r.created_at, r.updated_at);
+  }
+  // 父版本引用等全部简历写入后再补，避免自引用外键的顺序问题。
+  for (const r of parsed.resumes) {
+    if (r.parent_id) db.prepare('UPDATE resume SET parent_id = ? WHERE id = ?').run(r.parent_id, r.id);
   }
   for (const a of parsed.jdAnalyses) {
     db.prepare(
@@ -533,8 +573,25 @@ function writeOverwrite(parsed: ReturnType<typeof parseRows>, profile: BackupFil
   }
   for (const a of parsed.applications) {
     db.prepare(
-      'INSERT INTO application (id, company, title, job_id, applied_on, stage, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(a.id, a.company, a.title, a.job_id, a.applied_on, a.stage, a.note, a.created_at, a.updated_at);
+      'INSERT INTO application (id, company, title, job_id, applied_on, stage, note, next_action_at, next_action_note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      a.id,
+      a.company,
+      a.title,
+      a.job_id,
+      a.applied_on,
+      a.stage,
+      a.note,
+      a.next_action_at,
+      a.next_action_note,
+      a.created_at,
+      a.updated_at,
+    );
+  }
+  for (const l of parsed.applicationStageLog) {
+    db.prepare(
+      'INSERT INTO application_stage_log (id, application_id, from_stage, to_stage, note, changed_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(l.id, l.application_id, l.from_stage, l.to_stage, l.note, l.changed_at);
   }
   for (const l of parsed.applicationLinks) {
     db.prepare(
@@ -577,6 +634,12 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
       .run(r.title, r.content, r.job_id ? jobMap.get(r.job_id) ?? null : null, r.source, r.created_at, r.updated_at);
     resumeMap.set(r.id, ins.lastInsertRowid);
   }
+  for (const r of parsed.resumes) {
+    if (!r.parent_id) continue;
+    const newId = resumeMap.get(r.id);
+    const newParent = resumeMap.get(r.parent_id);
+    if (newId && newParent) db.prepare('UPDATE resume SET parent_id = ? WHERE id = ?').run(newParent, newId);
+  }
   for (const a of parsed.jdAnalyses) {
     db.prepare(
       'INSERT INTO jd_analysis (resume_id, job_id, jd, score, result_json, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -593,7 +656,7 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
   for (const a of parsed.applications) {
     const r = db
       .prepare(
-        'INSERT INTO application (company, title, job_id, applied_on, stage, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO application (company, title, job_id, applied_on, stage, note, next_action_at, next_action_note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         a.company,
@@ -602,10 +665,19 @@ function writeMerge(parsed: ReturnType<typeof parseRows>, profile: BackupFile['p
         a.applied_on,
         a.stage,
         a.note,
+        a.next_action_at,
+        a.next_action_note,
         a.created_at,
         a.updated_at,
       );
     appMap.set(a.id, r.lastInsertRowid);
+  }
+  for (const l of parsed.applicationStageLog) {
+    const appId = appMap.get(l.application_id);
+    if (!appId) continue;
+    db.prepare(
+      'INSERT INTO application_stage_log (application_id, from_stage, to_stage, note, changed_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(appId, l.from_stage, l.to_stage, l.note, l.changed_at);
   }
   for (const iv of parsed.interviews) {
     const r = db
@@ -773,6 +845,9 @@ BACKUP_ROUTER.get(
         reviewTasks: db.prepare('SELECT * FROM review_task ORDER BY kind, ref_id').all() as Obj[],
         applications: db.prepare('SELECT * FROM application ORDER BY id').all() as Obj[],
         applicationLinks: db.prepare('SELECT * FROM application_link ORDER BY application_id, kind, ref_id').all() as Obj[],
+        applicationStageLog: db
+          .prepare('SELECT * FROM application_stage_log ORDER BY application_id, changed_at, id')
+          .all() as Obj[],
       },
     };
     const filename = `fenglin-backup-${new Date().toISOString().slice(0, 10)}.json`;

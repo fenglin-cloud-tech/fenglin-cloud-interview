@@ -28,6 +28,14 @@ export function Bank() {
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('');
   const [weakOnly, setWeakOnly] = useState(false);
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [editing, setEditing] = useState<BankItem | null>(null);
+  const [editForm, setEditForm] = useState({ question: '', category: '专业', jobId: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [adding, setAdding] = useState(false);
   const [newQ, setNewQ] = useState('');
@@ -42,22 +50,31 @@ export function Bank() {
   const [recording, setRecording] = useState(false);
   const [lastResult, setLastResult] = useState<ReviewResultRecord | null>(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    api
-      .bank({ category: category || undefined, weak: weakOnly })
-      .then((r) => {
-        setItems(r.items);
-        setFacets(r.facets);
-        setTotals(r.totals);
-        setSelected((prev) => prev.filter((id) => r.items.some((i) => i.id === id)));
-      })
-      .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
-  }, [category, weakOnly]);
+  const load = useCallback(
+    (cursor?: number | null) => {
+      const appending = !!cursor;
+      if (appending) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+      api
+        .bank({ category: category || undefined, weak: weakOnly, q: q || undefined, cursor, limit: 50 })
+        .then((r) => {
+          setItems((prev) => (appending ? [...prev, ...r.items] : r.items));
+          setNextCursor(r.nextCursor);
+          setFacets(r.facets);
+          setTotals(r.totals);
+          if (!appending) setSelected((prev) => prev.filter((id) => r.items.some((i) => i.id === id)));
+        })
+        .catch((e) => setError(e instanceof ApiError ? e.message : '加载失败'))
+        .finally(() => {
+          setLoading(false);
+          setLoadingMore(false);
+        });
+    },
+    [category, weakOnly, q],
+  );
 
-  useEffect(load, [load]);
+  useEffect(() => load(), [load]);
 
   const loadPlan = useCallback(() => {
     setPlanError(null);
@@ -144,6 +161,64 @@ export function Bank() {
       loadPlan();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '删除失败', 'err');
+    }
+  };
+
+  const openEdit = (b: BankItem) => {
+    setEditing(b);
+    setEditForm({ question: b.question, category: b.category, jobId: b.job_id ? String(b.job_id) : '' });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    if (!editForm.question.trim()) return toast('题目不能为空', 'err');
+    setSavingEdit(true);
+    try {
+      await api.updateBankItem(editing.id, {
+        question: editForm.question.trim(),
+        category: editForm.category,
+        jobId: editForm.jobId ? Number(editForm.jobId) : null,
+      });
+      toast('题目已更新', 'ok');
+      setEditing(null);
+      load();
+      loadPlan();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '保存失败', 'err');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const batchSetWeak = async (weak: boolean) => {
+    if (!selected.length) return;
+    setBatchBusy(true);
+    try {
+      await Promise.all(selected.map((id) => api.updateBankItem(id, { weak })));
+      toast(weak ? `已标记 ${selected.length} 道为薄弱` : `已取消 ${selected.length} 道的薄弱标记`, 'ok');
+      setSelected([]);
+      load();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '批量更新失败', 'err');
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const batchRemove = async () => {
+    if (!selected.length) return;
+    if (!window.confirm(`确认删除选中的 ${selected.length} 道题？删除后不可恢复。`)) return;
+    setBatchBusy(true);
+    try {
+      await Promise.all(selected.map((id) => api.deleteBankItem(id)));
+      toast(`已删除 ${selected.length} 道题`, 'ok');
+      setSelected([]);
+      load();
+      loadPlan();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : '批量删除失败', 'err');
+    } finally {
+      setBatchBusy(false);
     }
   };
 
@@ -258,6 +333,29 @@ export function Bank() {
 
       <Card className="filter-card">
         <div className="row gap-8 wrap">
+          <input
+            className="input search"
+            aria-label="搜索题库"
+            placeholder="搜索题目…"
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && setQ(qInput)}
+          />
+          <Button size="sm" onClick={() => setQ(qInput)}>
+            搜索
+          </Button>
+          {q && (
+            <Button
+              size="sm"
+              variant="quiet"
+              onClick={() => {
+                setQInput('');
+                setQ('');
+              }}
+            >
+              清空
+            </Button>
+          )}
           <button className={`filter-chip ${category === '' ? 'on' : ''}`} onClick={() => setCategory('')}>
             全部 {totals.total}
           </button>
@@ -357,6 +455,9 @@ export function Bank() {
               >
                 {b.weak ? '★' : '☆'}
               </button>
+              <button className="link-btn" onClick={() => openEdit(b)}>
+                编辑
+              </button>
               <button className="danger-link" onClick={() => void remove(b)}>
                 删除
               </button>
@@ -365,12 +466,29 @@ export function Bank() {
         ))}
       </div>
 
+      {nextCursor && (
+        <div className="row gap-8" style={{ justifyContent: 'center', marginTop: 12 }}>
+          <Button size="sm" variant="quiet" loading={loadingMore} onClick={() => load(nextCursor)}>
+            加载更多
+          </Button>
+        </div>
+      )}
+
       {selected.length > 0 && (
         <div className="dock">
           <span>已选 {selected.length} 道</span>
-          <div className="row gap-8">
+          <div className="row gap-8 wrap">
             <Button size="sm" variant="quiet" onClick={() => setSelected([])}>
               取消
+            </Button>
+            <Button size="sm" variant="quiet" disabled={batchBusy} onClick={() => void batchSetWeak(true)}>
+              标为薄弱
+            </Button>
+            <Button size="sm" variant="quiet" disabled={batchBusy} onClick={() => void batchSetWeak(false)}>
+              取消薄弱
+            </Button>
+            <Button size="sm" variant="quiet" disabled={batchBusy} onClick={() => void batchRemove()}>
+              批量删除
             </Button>
             <Button size="sm" variant="ink" onClick={() => void practice()} loading={starting}>
               开始再练
@@ -467,6 +585,60 @@ export function Bank() {
             )}
           </>
         )}
+      </Modal>
+
+      <Modal
+        open={!!editing}
+        title="编辑题目"
+        onClose={() => setEditing(null)}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setEditing(null)}>
+              取消
+            </Button>
+            <Button variant="ink" loading={savingEdit} onClick={() => void saveEdit()}>
+              保存
+            </Button>
+          </>
+        }
+      >
+        <Field label="题目" required>
+          <textarea
+            className="textarea"
+            rows={3}
+            value={editForm.question}
+            onChange={(e) => setEditForm((f) => ({ ...f, question: e.target.value }))}
+          />
+        </Field>
+        <div className="form-row">
+          <Field label="分类">
+            <select
+              className="input"
+              value={editForm.category}
+              onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}
+            >
+              {['专业', '行为', '自我介绍', '反问', '复盘'].map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="关联岗位">
+            <select
+              className="input"
+              value={editForm.jobId}
+              onChange={(e) => setEditForm((f) => ({ ...f, jobId: e.target.value }))}
+            >
+              <option value="">不关联</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </Modal>
 
       <Callout tone="info">

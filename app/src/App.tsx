@@ -9,6 +9,9 @@ const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })
 const Templates = lazy(() => import('./pages/Templates').then((m) => ({ default: m.Templates })));
 const TemplateBuild = lazy(() => import('./pages/TemplateBuild').then((m) => ({ default: m.TemplateBuild })));
 const Resumes = lazy(() => import('./pages/Resumes').then((m) => ({ default: m.Resumes })));
+const ResumeCompare = lazy(() =>
+  import('./pages/ResumeCompare').then((m) => ({ default: m.ResumeCompare })),
+);
 const Jobs = lazy(() => import('./pages/Jobs').then((m) => ({ default: m.Jobs })));
 const Optimize = lazy(() => import('./pages/Optimize').then((m) => ({ default: m.Optimize })));
 const Interviews = lazy(() => import('./pages/Interviews').then((m) => ({ default: m.Interviews })));
@@ -26,6 +29,9 @@ const ImportResume = lazy(() => import('./pages/ImportResume').then((m) => ({ de
 const PrintResume = lazy(() => import('./pages/PrintResume').then((m) => ({ default: m.PrintResume })));
 const PrintReviews = lazy(() => import('./pages/PrintReviews').then((m) => ({ default: m.PrintReviews })));
 const PrintProfile = lazy(() => import('./pages/PrintProfile').then((m) => ({ default: m.PrintProfile })));
+const PrintInterview = lazy(() =>
+  import('./pages/PrintInterview').then((m) => ({ default: m.PrintInterview })),
+);
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 export function App() {
@@ -44,12 +50,14 @@ export function App() {
               <Route path="print/resume/:id" element={<PrintResume />} />
               <Route path="print/reviews" element={<PrintReviews />} />
               <Route path="print/profile" element={<PrintProfile />} />
+              <Route path="print/interview/:id" element={<PrintInterview />} />
               <Route element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route path="templates" element={<Templates />} />
                 <Route path="templates/:id" element={<TemplateBuild />} />
                 <Route path="import" element={<ImportResume />} />
                 <Route path="resumes" element={<Resumes />} />
+                <Route path="resumes/compare" element={<ResumeCompare />} />
                 <Route path="jobs" element={<Jobs />} />
                 <Route path="optimize" element={<Optimize />} />
                 <Route path="interviews" element={<Interviews />} />

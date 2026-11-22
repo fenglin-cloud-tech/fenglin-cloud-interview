@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useApp } from '../state';
@@ -23,6 +23,28 @@ export function Resumes() {
   const [form, setForm] = useState({ title: '', content: '', jobId: '' });
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const byId = useMemo(() => new Map(resumes.map((r) => [r.id, r])), [resumes]);
+  const chains = useMemo(() => {
+    const rootOf = (r: Resume): Resume => {
+      let cur = r;
+      for (let guard = 0; cur.parent_id && byId.get(cur.parent_id) && guard < 20; guard += 1) {
+        cur = byId.get(cur.parent_id)!;
+      }
+      return cur;
+    };
+    const map = new Map<number, Resume[]>();
+    for (const r of resumes) {
+      const root = rootOf(r);
+      const list = map.get(root.id) || [];
+      list.push(r);
+      map.set(root.id, list);
+    }
+    return [...map.values()]
+      .map((list) => [...list].sort((a, b) => a.id - b.id))
+      .filter((list) => list.length > 1)
+      .sort((a, b) => b.length - a.length);
+  }, [resumes, byId]);
 
   const load = () => {
     setLoading(true);
@@ -151,6 +173,27 @@ export function Resumes() {
         </Card>
       )}
 
+      {chains.length > 0 && (
+        <Card title="版本谱系" subtitle="「另存新版」会自动记录派生关系；可对比首尾两版">
+          <ul className="checklist">
+            {chains.map((chain) => (
+              <li key={chain[0].id}>
+                <span className="check-mark">↳</span>
+                <span>{chain.map((c) => `#${c.id} ${c.title}`).join(' → ')}</span>
+                <button
+                  className="link-btn"
+                  onClick={() =>
+                    navigate(`/resumes/compare?a=${chain[0].id}&b=${chain[chain.length - 1].id}`)
+                  }
+                >
+                  对比首尾
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <div className="resume-grid">
         {resumes.map((r) => (
           <Card key={r.id} className={`resume-card ${activeResume?.id === r.id ? 'is-active' : ''}`}>
@@ -160,6 +203,9 @@ export function Resumes() {
                 <div className="chip-row">
                   <Chip tone="ink">{SOURCE_LABEL[r.source] || r.source}</Chip>
                   {r.job_title && <Chip tone="blue">{r.job_title}</Chip>}
+                  {r.parent_id && byId.get(r.parent_id) && (
+                    <Chip tone="default">派生自 #{r.parent_id}</Chip>
+                  )}
                   {activeResume?.id === r.id && <Chip tone="green">当前使用</Chip>}
                 </div>
               </div>
@@ -178,6 +224,15 @@ export function Resumes() {
               <Button size="sm" onClick={() => openEdit(r)}>
                 编辑
               </Button>
+              {r.parent_id && byId.get(r.parent_id) && (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => navigate(`/resumes/compare?a=${r.parent_id}&b=${r.id}`)}
+                >
+                  对比父版
+                </Button>
+              )}
               {activeResume?.id !== r.id && (
                 <Button size="sm" variant="quiet" onClick={() => void setActiveResume(r.id).then(() => toast('已设为当前简历', 'ok'))}>
                   设为当前

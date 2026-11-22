@@ -28,6 +28,14 @@ interface Dash {
     job_title: string | null;
     answered: number;
   }[];
+  followUps: {
+    id: number;
+    company: string;
+    title: string;
+    stage: string;
+    next_action_at: string;
+    next_action_note: string;
+  }[];
   activeResumeId: number | null;
   activeJobId: number | null;
   aiConfigured: boolean;
@@ -239,6 +247,31 @@ export function Home() {
           </div>
 
           {growth && <GrowthPanel data={growth} activeJobId={data?.activeJobId ?? activeJob?.id ?? null} />}
+
+          {data?.followUps?.length ? (
+            <Card
+              title="今日需跟进"
+              subtitle="来自投递记录的下次跟进日期，逾期也会显示在这里"
+              extra={
+                <Link to="/applications" className="link">
+                  去投递追踪 →
+                </Link>
+              }
+            >
+              <ul className="checklist">
+                {data.followUps.map((f) => (
+                  <li key={f.id} className="done">
+                    <span className="check-mark">!</span>
+                    <span>
+                      {f.company} · {f.title}
+                      {f.next_action_note ? ` · ${f.next_action_note}` : ''}
+                    </span>
+                    <span className="muted small">{f.next_action_at}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           <div className="grid-2">
             <Card title="闭环清单" subtitle="按顺序点亮，任何一环没数据都会卡住下一步">

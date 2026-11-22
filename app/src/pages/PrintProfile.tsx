@@ -43,6 +43,9 @@ export function PrintProfile() {
         <button type="button" className="btn btn-ink" onClick={() => window.print()}>
           打印 / 另存为 PDF
         </button>
+        <a className="btn btn-ghost" href="/api/dossier/docx">
+          下载 Word
+        </a>
         <a className="btn btn-ghost" href="/">
           返回训练台
         </a>

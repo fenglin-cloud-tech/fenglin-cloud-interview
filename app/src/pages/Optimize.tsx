@@ -38,6 +38,20 @@ const STATUS_LABEL: Record<string, string> = {
   missing: '缺失',
 };
 
+/** 建议任务进度存 sessionStorage：刷新页面后仍能接着轮询（任务本身已落库）。 */
+const SUGGESTION_STORAGE_KEY = 'fenglin:suggestion-job';
+const SUGGESTION_MAX_AGE_MS = 9 * 60 * 1000;
+
+interface StoredSuggestionJob {
+  jobId: string;
+  resumeId: number | null;
+  jobTitle: string;
+  resumeText: string;
+  startedAt: number;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
 export function Optimize() {
   const [params] = useSearchParams();
   const { resumes, jobs, activeResume, activeJob, loading: ctxLoading, refreshResumes, setActiveResume, setActiveJob, toast } =
@@ -62,6 +76,7 @@ export function Optimize() {
   const [match, setMatch] = useState<JdMatchResult | null>(null);
   const [matchMeta, setMatchMeta] = useState<LlmMeta | null>(null);
   const [history, setHistory] = useState<JdAnalysisRecord[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<number | null>(null);
 
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [changes, setChanges] = useState<string[]>([]);
@@ -73,9 +88,11 @@ export function Optimize() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
+  const [undoDepth, setUndoDepth] = useState(0);
 
   const userTouched = useRef(false);
   const sugRunRef = useRef(0);
+  const undoStack = useRef<string[]>([]);
 
   // 上下文异步加载：等简历/岗位到齐后再补默认值；用户手动切换后不再自动覆盖
   useEffect(() => {
@@ -101,9 +118,14 @@ export function Optimize() {
   }, [jobs, activeJob, params, jobId]);
 
   const switchResume = (id: number | null) => {
+    if (sugLoading && id !== resumeId) {
+      const ok = window.confirm('建议任务正在生成，切换简历会取消本次任务。是否继续？');
+      if (!ok) return;
+    }
     userTouched.current = true;
     sugRunRef.current += 1; // 取消正在轮询的旧简历建议，避免结果串到新简历
     setSugLoading(false);
+    sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
     setResumeId(id);
     const r = resumes.find((x) => x.id === id);
     if (r) {
@@ -119,6 +141,10 @@ export function Optimize() {
   };
 
   const switchJob = (id: number | null) => {
+    if (sugLoading && id !== jobId) {
+      const ok = window.confirm('建议任务正在生成，切换岗位会取消本次任务。是否继续？');
+      if (!ok) return;
+    }
     userTouched.current = true;
     setJobId(id);
     const j = jobs.find((x) => x.id === id);
@@ -133,9 +159,68 @@ export function Optimize() {
     if (!resumeId) return;
     api
       .jdAnalyses(resumeId)
-      .then((r) => setHistory(r.analyses))
-      .catch(() => setHistory([]));
+      .then((r) => {
+        setHistory(r.analyses);
+        setHistoryCursor(r.nextCursor);
+      })
+      .catch(() => {
+        setHistory([]);
+        setHistoryCursor(null);
+      });
   }, [resumeId]);
+
+  const loadMoreHistory = () => {
+    if (!resumeId || !historyCursor) return;
+    api
+      .jdAnalyses(resumeId, historyCursor)
+      .then((r) => {
+        setHistory((prev) => [...prev, ...r.analyses]);
+        setHistoryCursor(r.nextCursor);
+      })
+      .catch(() => toast('加载更多诊断失败', 'err'));
+  };
+
+  /** 轮询建议任务：指数退避（1.2s 起，最多 5s），网络抖动最多连续容忍 2 次。 */
+  const pollSuggestion = async (jobId: string, runId: number) => {
+    let delay = 1200;
+    let networkFailures = 0;
+    try {
+      for (let i = 0; i < 150; i += 1) {
+        await sleep(delay);
+        if (sugRunRef.current !== runId) return;
+        try {
+          const job = await api.suggestionJob(jobId);
+          networkFailures = 0;
+          if (sugRunRef.current !== runId) return;
+          if (job.status === 'done' && job.result) {
+            setSug(job.result);
+            setSugMeta(job.meta ?? null);
+            sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+            return;
+          }
+          if (job.status === 'error') {
+            setSugError(job.error?.message || '生成失败');
+            sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+            return;
+          }
+        } catch (e) {
+          const transient = e instanceof ApiError && (e.code === 'TIMEOUT' || e.code === 'NETWORK');
+          if (!transient || networkFailures >= 2) throw e;
+          networkFailures += 1;
+        }
+        delay = Math.min(Math.round(delay * 1.3), 5000);
+      }
+      setSugError('生成超时，请稍后重试');
+      sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+    } catch (e) {
+      if (sugRunRef.current === runId) {
+        setSugError(e instanceof ApiError ? e.message : '生成失败');
+        sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+      }
+    } finally {
+      if (sugRunRef.current === runId) setSugLoading(false);
+    }
+  };
 
   const runSuggestions = async () => {
     if (resumeText.trim().length < 20) return toast('简历内容太短，至少 20 字', 'err');
@@ -148,28 +233,55 @@ export function Optimize() {
     try {
       const { jobId } = await api.suggestions({ resumeText, jobTitle });
       // 服务端已改为异步任务：这里轮询结果，避免单个请求被平台网关 30s 截断
-      for (let i = 0; i < 150; i += 1) {
-        await new Promise((r) => setTimeout(r, 1200));
-        if (sugRunRef.current !== runId) return;
-        const job = await api.suggestionJob(jobId);
-        if (sugRunRef.current !== runId) return;
-        if (job.status === 'done' && job.result) {
-          setSug(job.result);
-          setSugMeta(job.meta ?? null);
-          return;
-        }
-        if (job.status === 'error') {
-          setSugError(job.error?.message || '生成失败');
-          return;
-        }
-      }
-      setSugError('生成超时，请稍后重试');
+      const stored: StoredSuggestionJob = {
+        jobId,
+        resumeId,
+        jobTitle,
+        resumeText,
+        startedAt: Date.now(),
+      };
+      sessionStorage.setItem(SUGGESTION_STORAGE_KEY, JSON.stringify(stored));
+      await pollSuggestion(jobId, runId);
     } catch (e) {
       if (sugRunRef.current === runId) setSugError(e instanceof ApiError ? e.message : '生成失败');
     } finally {
       if (sugRunRef.current === runId) setSugLoading(false);
     }
   };
+
+  const cancelSuggestions = () => {
+    sugRunRef.current += 1;
+    setSugLoading(false);
+    sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+    toast('已取消本次建议任务，后台结果不会再写入页面', 'ok');
+  };
+
+  // 刷新页面后恢复未完成的建议任务：任务状态在服务端 ai_job 表中，可以继续轮询。
+  useEffect(() => {
+    const raw = sessionStorage.getItem(SUGGESTION_STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const stored = JSON.parse(raw) as StoredSuggestionJob;
+      if (!stored.jobId || Date.now() - stored.startedAt > SUGGESTION_MAX_AGE_MS) {
+        sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+        return;
+      }
+      if (stored.resumeId) {
+        setResumeId(stored.resumeId);
+        setResumeText(stored.resumeText);
+      }
+      setJobTitle(stored.jobTitle);
+      const runId = sugRunRef.current + 1;
+      sugRunRef.current = runId;
+      setSugLoading(true);
+      setSugStart(stored.startedAt);
+      setSugError(null);
+      void pollSuggestion(stored.jobId, runId);
+    } catch {
+      sessionStorage.removeItem(SUGGESTION_STORAGE_KEY);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const runMatch = async () => {
     if (jd.trim().length < 30) return toast('JD 太短，请粘贴完整的岗位描述', 'err');
@@ -183,6 +295,7 @@ export function Optimize() {
       if (savedId) {
         const r = await api.jdAnalyses(resumeId);
         setHistory(r.analyses);
+        setHistoryCursor(r.nextCursor);
       }
     } catch (e) {
       setMatchError(e instanceof ApiError ? e.message : '分析失败');
@@ -231,6 +344,7 @@ export function Optimize() {
         title: `${base?.title || '简历'} · 迭代 ${new Date().toLocaleDateString('zh-CN')}`,
         content: draft,
         jobId,
+        parentId: resumeId,
         source: 'ai',
       });
       await refreshResumes();
@@ -246,7 +360,29 @@ export function Optimize() {
     }
   };
 
+  const applyAdvice = (original: string, advice: string) => {
+    if (!original || !draft.includes(original)) {
+      toast('草稿里找不到这条原文，可能已被改过，请手动调整', 'err');
+      return;
+    }
+    undoStack.current.push(draft);
+    setUndoDepth(undoStack.current.length);
+    setDraft(draft.replace(original, advice));
+    setTab('iterate');
+    toast('已应用到当前草稿，可随时撤销', 'ok');
+  };
+
+  const undoSuggestion = () => {
+    const prev = undoStack.current.pop();
+    if (prev === undefined) return;
+    setDraft(prev);
+    setUndoDepth(undoStack.current.length);
+    toast('已撤销上一次应用', 'ok');
+  };
+
   const diff = useMemo(() => (showDiff ? diffLines(baseline, draft) : []), [showDiff, baseline, draft]);
+  const exportDiff = useMemo(() => diffLines(baseline, draft), [baseline, draft]);
+  const unsaved = draft !== baseline;
   const current = resumes.find((r) => r.id === resumeId);
 
   if (ctxLoading && resumes.length === 0) {
@@ -372,11 +508,18 @@ export function Optimize() {
           </div>
 
           {sugLoading && (
-            <BusyProgress
-              label="正在逐板块阅读简历，生成修改建议"
-              start={sugStart}
-              note="后台生成，通常 20-40 秒"
-            />
+            <div className="stack">
+              <BusyProgress
+                label="正在逐板块阅读简历，生成修改建议"
+                start={sugStart}
+                note="后台生成，通常 20-40 秒；刷新页面也会接着等"
+              />
+              <div className="row gap-8" style={{ justifyContent: 'flex-end' }}>
+                <Button size="sm" variant="quiet" onClick={cancelSuggestions}>
+                  取消任务
+                </Button>
+              </div>
+            </div>
           )}
           {sugError && <ErrorState message={sugError} onRetry={() => void runSuggestions()} />}
 
@@ -427,6 +570,15 @@ export function Optimize() {
                         </div>
                         <div className="advice-actions">
                           <CopyButton text={item.advice} label="复制改法" />
+                          {item.original && draft.includes(item.original) && (
+                            <Button
+                              size="sm"
+                              variant="quiet"
+                              onClick={() => applyAdvice(item.original, item.advice)}
+                            >
+                              应用到草稿
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -548,6 +700,13 @@ export function Optimize() {
                   </li>
                 ))}
               </ul>
+              {historyCursor && (
+                <div className="row gap-8" style={{ justifyContent: 'center', marginTop: 12 }}>
+                  <Button size="sm" variant="quiet" onClick={loadMoreHistory}>
+                    加载更多
+                  </Button>
+                </div>
+              )}
             </Card>
           )}
         </div>
@@ -607,6 +766,11 @@ export function Optimize() {
             subtitle={showDiff ? '绿色为新增，红色为删除' : '模型每次改写都会更新这里，确认后再另存'}
             extra={
               <div className="row gap-8">
+                {undoDepth > 0 && (
+                  <Button size="sm" variant="quiet" onClick={undoSuggestion}>
+                    撤销应用（{undoDepth}）
+                  </Button>
+                )}
                 <Button size="sm" variant="quiet" onClick={() => setShowDiff((v) => !v)}>
                   {showDiff ? '看正文' : '对比原始'}
                 </Button>
@@ -662,20 +826,38 @@ export function Optimize() {
                   size="sm"
                   variant="ink"
                   disabled={!resumeId}
-                  onClick={() => resumeId && downloadFrom(`/api/resumes/${resumeId}/docx`)}
+                  onClick={() => {
+                    if (unsaved) return toast('当前草稿尚未保存，请先另存新版再导出 Word', 'err');
+                    if (resumeId) downloadFrom(`/api/resumes/${resumeId}/docx`);
+                  }}
                 >
                   下载 Word（.docx）
                 </Button>
                 <Button
                   size="sm"
                   disabled={!resumeId}
-                  onClick={() => resumeId && openPrintView(`/print/resume/${resumeId}`)}
+                  onClick={() => {
+                    if (unsaved) return toast('当前草稿尚未保存，请先另存新版再打印', 'err');
+                    if (resumeId) openPrintView(`/print/resume/${resumeId}`);
+                  }}
                 >
                   打印 / 存为 PDF
                 </Button>
               </div>
             }
           >
+            {unsaved && (
+              <Callout tone="warn">
+                当前草稿与已保存版本不一致（新增{' '}
+                {exportDiff.filter((l) => l.type === 'add').length} 行 / 删除{' '}
+                {exportDiff.filter((l) => l.type === 'del').length} 行）。Word 与打印读取已保存版本，
+                请先{' '}
+                <button className="link-btn" onClick={() => void saveVersion()}>
+                  另存为新版本
+                </button>
+                ，MD 导出不受影响。
+              </Callout>
+            )}
             <div className="paper-scroll export-preview markdown-body">{renderMarkdown(draft || resumeText || '（暂无内容）')}</div>
             <Callout tone="info">
               Word 与打印视图读取的是<strong>已保存</strong>的简历版本；如果刚才在左侧改过内容，请先保存再导出。

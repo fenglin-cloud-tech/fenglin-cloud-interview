@@ -38,7 +38,16 @@ function fmtDateTime(iso?: string | null): string {
 }
 
 function emptyForm() {
-  return { company: '', title: '', jobId: '', appliedOn: today(), stage: 'applied' as ApplicationStage, note: '' };
+  return {
+    company: '',
+    title: '',
+    jobId: '',
+    appliedOn: today(),
+    stage: 'applied' as ApplicationStage,
+    note: '',
+    nextActionAt: '',
+    nextActionNote: '',
+  };
 }
 
 export function Applications() {
@@ -55,6 +64,8 @@ export function Applications() {
   const [linkBusy, setLinkBusy] = useState(false);
   const [pickInterview, setPickInterview] = useState('');
   const [pickReview, setPickReview] = useState('');
+  const [linkKeyword, setLinkKeyword] = useState('');
+  const [sameJobOnly, setSameJobOnly] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<ApplicationRecord | null>(null);
 
   const load = async () => {
@@ -80,6 +91,8 @@ export function Applications() {
       setDetailId(id);
       setPickInterview('');
       setPickReview('');
+      setLinkKeyword('');
+      setSameJobOnly(true);
     } catch (e) {
       toast(e instanceof ApiError ? e.message : '投递详情加载失败', 'err');
     }
@@ -87,8 +100,11 @@ export function Applications() {
 
   const stats = useMemo(() => {
     const total = apps.length;
-    const interviewed = apps.filter((a) => IN_INTERVIEW.includes(a.stage)).length;
-    const offers = apps.filter((a) => a.stage === 'offer').length;
+    // 按历史判断「曾进入面试 / 曾获 offer」：旧记录没有 stageLog 时退回当前阶段。
+    const everReached = (a: ApplicationRecord, stages: ApplicationStage[]) =>
+      stages.includes(a.stage) || (a.stageLog || []).some((l) => stages.includes(l.toStage));
+    const interviewed = apps.filter((a) => everReached(a, IN_INTERVIEW)).length;
+    const offers = apps.filter((a) => everReached(a, ['offer'])).length;
     const active = apps.filter((a) => ACTIVE.includes(a.stage)).length;
     const closed = apps.filter((a) => a.stage === 'rejected' || a.stage === 'withdrawn').length;
     return {
@@ -119,6 +135,8 @@ export function Applications() {
       appliedOn: a.appliedOn,
       stage: a.stage,
       note: a.note,
+      nextActionAt: a.nextActionAt || '',
+      nextActionNote: a.nextActionNote || '',
     });
     setFormOpen(true);
   };
@@ -135,6 +153,8 @@ export function Applications() {
         appliedOn: form.appliedOn,
         stage: form.stage,
         note: form.note,
+        nextActionAt: form.nextActionAt || null,
+        nextActionNote: form.nextActionNote,
       };
       if (editing) await api.updateApplication(editing.id, body);
       else await api.createApplication(body);
@@ -206,18 +226,32 @@ export function Applications() {
     return `更新于 ${fmtDateTime(a.updatedAt)}`;
   };
 
+  const kw = linkKeyword.trim().toLowerCase();
+  const jobIdOfDetail = detail?.application.jobId ?? null;
   const availableInterviews =
-    detail?.options.interviews.filter(
-      (i) =>
-        !detail.application.links.interviews.some((x) => x.id === i.id) &&
-        (!i.linkedApplicationId || i.linkedApplicationId === detail.application.id),
-    ) ?? [];
+    detail?.options.interviews
+      .filter(
+        (i) =>
+          !detail.application.links.interviews.some((x) => x.id === i.id) &&
+          (!i.linkedApplicationId || i.linkedApplicationId === detail.application.id),
+      )
+      .filter((i) => !sameJobOnly || !jobIdOfDetail || i.job_id === jobIdOfDetail)
+      .filter((i) => !kw || `#${i.id} ${i.started_at} ${i.mode}`.toLowerCase().includes(kw))
+      .sort(
+        (a, b) =>
+          (b.job_id === jobIdOfDetail ? 1 : 0) - (a.job_id === jobIdOfDetail ? 1 : 0) ||
+          b.started_at.localeCompare(a.started_at),
+      ) ?? [];
   const availableReviews =
-    detail?.options.reviews.filter(
-      (r) =>
-        !detail.application.links.reviews.some((x) => x.id === r.id) &&
-        (!r.linkedApplicationId || r.linkedApplicationId === detail.application.id),
-    ) ?? [];
+    detail?.options.reviews
+      .filter(
+        (r) =>
+          !detail.application.links.reviews.some((x) => x.id === r.id) &&
+          (!r.linkedApplicationId || r.linkedApplicationId === detail.application.id),
+      )
+      .filter((r) => !sameJobOnly || !jobIdOfDetail || r.job_id === jobIdOfDetail)
+      .filter((r) => !kw || `#${r.id} ${r.question}`.toLowerCase().includes(kw))
+      .sort((a, b) => (b.job_id === jobIdOfDetail ? 1 : 0) - (a.job_id === jobIdOfDetail ? 1 : 0)) ?? [];
 
   return (
     <div className="page">
@@ -238,19 +272,19 @@ export function Applications() {
         <div className="app-stat">
           <span>进入面试</span>
           <b>{stats.interviewed}</b>
-          <em>当前阶段在一面及以后</em>
+          <em>按历史阶段，曾进入一面及以后</em>
         </div>
         <div className="app-stat">
           <span>已发 offer</span>
           <b>{stats.offers}</b>
-          <em>当前阶段为 offer</em>
+          <em>按历史阶段，曾获 offer</em>
         </div>
         <div className="app-stat">
           <span>进行中 / 已结束</span>
           <b>
             {stats.active} / {stats.closed}
           </b>
-          <em>按当前阶段统计，不保留阶段历史</em>
+          <em>进行中 / 结束按当前阶段统计</em>
         </div>
         <div className="app-stat rates">
           <span>转化概览</span>
@@ -348,7 +382,8 @@ export function Applications() {
       )}
 
       <p className="app-hint">
-        统计口径：进入面试 = 当前阶段为一面 / 二面 / HR 面 / offer；由于不保存阶段变更历史，曾被拒但面试过的记录不会回溯计入。
+        统计口径：进入面试 = 历史上曾进入一面 / 二面 / HR 面 / offer；曾获 offer = 历史上出现过 offer。阶段变更会自动记录，
+        旧的记录没有历史时退回当前阶段计算。
       </p>
 
       <Modal
@@ -443,6 +478,26 @@ export function Applications() {
             placeholder="例如：内推投递，一周内等笔试通知"
           />
         </Field>
+        <div className="form-row">
+          <Field label="下次跟进日期" hint="可选；训练台会在当天提醒">
+            <input
+              className="input"
+              type="date"
+              aria-label="下次跟进日期"
+              value={form.nextActionAt}
+              onChange={(e) => setForm({ ...form, nextActionAt: e.target.value })}
+            />
+          </Field>
+          <Field label="跟进事项" hint="例如：询问笔试结果">
+            <input
+              className="input"
+              aria-label="跟进事项"
+              value={form.nextActionNote}
+              onChange={(e) => setForm({ ...form, nextActionNote: e.target.value })}
+              placeholder="例如：询问笔试结果"
+            />
+          </Field>
+        </div>
       </Modal>
 
       <Modal
@@ -499,6 +554,58 @@ export function Applications() {
                 <p className="app-detail-note">{detail.application.note}</p>
               </div>
             )}
+            {detail.application.nextActionAt && (
+              <div>
+                <span className="app-detail-label">下次跟进</span>
+                <p>
+                  {fmtDate(detail.application.nextActionAt)}
+                  {detail.application.nextActionNote ? ` · ${detail.application.nextActionNote}` : ''}
+                </p>
+              </div>
+            )}
+
+            <div className="app-link-block">
+              <div className="app-link-title">
+                <h4>阶段历史</h4>
+                <span>{detail.application.stageLog.length} 条</span>
+              </div>
+              {detail.application.stageLog.length === 0 ? (
+                <p className="muted small">这条记录建立于阶段历史功能之前，暂无历史；之后修改阶段会自动记录。</p>
+              ) : (
+                <ul className="app-link-list">
+                  {detail.application.stageLog.map((l) => (
+                    <li key={l.id}>
+                      <span>
+                        {fmtDateTime(l.changedAt)} ·{' '}
+                        {l.fromStage ? `${STAGE_MAP[l.fromStage].label} → ` : ''}
+                        {STAGE_MAP[l.toStage].label}
+                        {l.note ? ` · ${l.note}` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="app-link-filter row gap-8 wrap">
+              <input
+                className="input"
+                aria-label="搜索可关联的面试或复盘"
+                placeholder="搜索面试编号 / 题型 / 复盘题目"
+                value={linkKeyword}
+                onChange={(e) => setLinkKeyword(e.target.value)}
+              />
+              {jobIdOfDetail && (
+                <label className="row gap-8 small">
+                  <input
+                    type="checkbox"
+                    checked={sameJobOnly}
+                    onChange={(e) => setSameJobOnly(e.target.checked)}
+                  />
+                  <span>只看同岗位记录</span>
+                </label>
+              )}
+            </div>
 
             <div className="app-link-block">
               <div className="app-link-title">

@@ -71,21 +71,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [p, r, j, s, h] = await Promise.all([
-        api.profile(),
-        api.resumes(),
-        api.jobs(),
-        api.state(),
-        api.health(),
-      ]);
-      setProfile(p.profile);
-      setResumes(r.resumes);
-      setJobs(j.jobs);
-      setActiveResumeId(s.activeResumeId);
-      setActiveJobId(s.activeJobId);
-      setAiConfigured(h.aiConfigured);
-      setSharedDemo(!!h.sharedDemo);
-      setModel(h.model);
+      // 首屏聚合接口：把 profile / resumes / jobs / state / health 合成一次往返。
+      const boot = await api.bootstrap();
+      setProfile(boot.profile);
+      setResumes(boot.resumes);
+      setJobs(boot.jobs);
+      setActiveResumeId(boot.activeResumeId);
+      setActiveJobId(boot.activeJobId);
+      setAiConfigured(boot.aiConfigured);
+      setSharedDemo(!!boot.sharedDemo);
+      setModel(boot.model);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : '加载失败，请刷新重试';
       setError(msg);

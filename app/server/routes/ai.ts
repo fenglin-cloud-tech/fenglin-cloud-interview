@@ -23,6 +23,7 @@ import {
   suggestionsPrompt,
 } from '../prompts.js';
 import { HttpError, ah, str } from '../util.js';
+import { createAiJob, failAiJob, finishAiJob, getAiJob } from '../ai-jobs.js';
 
 export const aiRouter = Router();
 
@@ -37,33 +38,13 @@ aiRouter.get('/ai/status', (_req, res) => {
 });
 
 /* 简历优化建议：模型调用通常 30-45s，超过平台网关 30s 上限，改为异步任务 + 轮询 */
-interface SuggestionJob {
-  status: 'pending' | 'done' | 'error';
-  startedAt: number;
-  result?: SuggestionResult;
-  meta?: LlmMeta;
-  error?: { code: string; message: string; detail?: string };
-}
-
-const suggestionJobs = new Map<string, SuggestionJob>();
-const SUGGESTION_JOB_TTL_MS = 10 * 60 * 1000;
-
-function sweepSuggestionJobs(): void {
-  const now = Date.now();
-  for (const [id, job] of suggestionJobs) {
-    if (now - job.startedAt > SUGGESTION_JOB_TTL_MS) suggestionJobs.delete(id);
-  }
-}
-
 aiRouter.post(
   '/ai/suggestions',
   ah(async (req, res) => {
     const resumeText = requireText(req.body?.resumeText, '简历内容');
     const jobTitle = str(req.body?.jobTitle, 120).trim();
-    sweepSuggestionJobs();
     const jobId = randomUUID();
-    const job: SuggestionJob = { status: 'pending', startedAt: Date.now() };
-    suggestionJobs.set(jobId, job);
+    createAiJob(jobId, 'suggestion', { jobTitle });
 
     // 先回 202，让每个 HTTP 请求都远低于网关 30s 上限；模型在后台继续跑
     res.status(202).json({ jobId, status: 'pending' });
@@ -75,17 +56,14 @@ aiRouter.post(
           temperature: 0.4,
           maxTokens: 2600,
         });
-        job.result = data;
-        job.meta = meta;
-        job.status = 'done';
+        finishAiJob(jobId, { result: data, meta });
       } catch (err) {
         const e = err as LlmError;
-        job.status = 'error';
-        job.error = {
+        failAiJob(jobId, {
           code: e.code || 'LLM_FAILED',
           message: e.code === 'NO_KEY' ? '服务端未配置智谱 API Key，暂时无法生成建议' : 'AI 暂时无法给出建议，请稍后重试',
           detail: e.detail,
-        };
+        });
       }
     })();
   }),
@@ -94,8 +72,8 @@ aiRouter.post(
 aiRouter.get(
   '/ai/suggestions/:jobId',
   ah(async (req, res) => {
-    const job = suggestionJobs.get(String(req.params.jobId));
-    if (!job) throw new HttpError(404, '建议任务不存在或已过期，请重新生成');
+    const job = getAiJob<{ result: SuggestionResult; meta: LlmMeta }>(String(req.params.jobId));
+    if (!job || job.kind !== 'suggestion') throw new HttpError(404, '建议任务不存在或已过期，请重新生成');
     if (job.status === 'pending') {
       res.json({ status: 'pending' });
       return;
@@ -104,7 +82,7 @@ aiRouter.get(
       res.json({ status: 'error', error: job.error });
       return;
     }
-    res.json({ status: 'done', result: job.result, meta: job.meta });
+    res.json({ status: 'done', result: job.result?.result, meta: job.result?.meta });
   }),
 );
 
@@ -152,10 +130,24 @@ aiRouter.post(
 
 aiRouter.get('/jd-analyses', (req, res) => {
   const resumeId = req.query.resumeId ? Number(req.query.resumeId) : null;
-  const rows = resumeId
-    ? db.prepare('SELECT * FROM jd_analysis WHERE resume_id = ? ORDER BY id DESC LIMIT 20').all(resumeId)
-    : db.prepare('SELECT * FROM jd_analysis ORDER BY id DESC LIMIT 20').all();
+  const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+  const limitRaw = req.query.limit ? Number(req.query.limit) : 20;
+  const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 20;
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (resumeId) {
+    conds.push('resume_id = ?');
+    params.push(resumeId);
+  }
+  if (cursor) {
+    conds.push('id < ?');
+    params.push(cursor);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const rows = db.prepare(`SELECT * FROM jd_analysis ${where} ORDER BY id DESC LIMIT ?`).all(...params, limit);
+  const nextCursor = rows.length === limit ? (rows[rows.length - 1] as { id: number }).id : null;
   res.json({
+    nextCursor,
     analyses: (rows as Record<string, unknown>[]).map((r) => ({
       id: r.id,
       resume_id: r.resume_id,

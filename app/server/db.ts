@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS resume (
   content     TEXT NOT NULL DEFAULT '',
   job_id      INTEGER REFERENCES job(id) ON DELETE SET NULL,
   source      TEXT NOT NULL DEFAULT 'manual',
+  parent_id   INTEGER REFERENCES resume(id) ON DELETE SET NULL,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -132,15 +133,39 @@ CREATE TABLE IF NOT EXISTS review_task (
 );
 
 CREATE TABLE IF NOT EXISTS application (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  company    TEXT NOT NULL,
-  title      TEXT NOT NULL,
-  job_id     INTEGER REFERENCES job(id) ON DELETE SET NULL,
-  applied_on TEXT NOT NULL,
-  stage      TEXT NOT NULL DEFAULT 'applied',
-  note       TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  company          TEXT NOT NULL,
+  title            TEXT NOT NULL,
+  job_id           INTEGER REFERENCES job(id) ON DELETE SET NULL,
+  applied_on       TEXT NOT NULL,
+  stage            TEXT NOT NULL DEFAULT 'applied',
+  note             TEXT NOT NULL DEFAULT '',
+  next_action_at   TEXT,
+  next_action_note TEXT NOT NULL DEFAULT '',
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+
+-- 投递阶段历史：每次阶段真正变化时追加一条，漏斗按历史计算。
+CREATE TABLE IF NOT EXISTS application_stage_log (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  application_id INTEGER NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+  from_stage     TEXT,
+  to_stage       TEXT NOT NULL,
+  note           TEXT NOT NULL DEFAULT '',
+  changed_at     TEXT NOT NULL
+);
+
+-- AI 异步任务：仅解决实例重启后任务状态丢失，不做跨实例共享。
+CREATE TABLE IF NOT EXISTS ai_job (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  status       TEXT NOT NULL,
+  payload_json TEXT,
+  result_json  TEXT,
+  error_json   TEXT,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL
 );
 
 -- 投递与面试/复盘的关联：单独关联表，避免给 interview / review 增加列和迁移。
@@ -176,6 +201,8 @@ CREATE INDEX IF NOT EXISTS idx_jd_resume ON jd_analysis(resume_id, id);
 CREATE INDEX IF NOT EXISTS idx_application_stage ON application(stage, applied_on DESC);
 CREATE INDEX IF NOT EXISTS idx_applink_app ON application_link(application_id);
 CREATE INDEX IF NOT EXISTS idx_applink_ref ON application_link(ref_id);
+CREATE INDEX IF NOT EXISTS idx_stage_log_app ON application_stage_log(application_id, changed_at);
+CREATE INDEX IF NOT EXISTS idx_ai_job_expires ON ai_job(expires_at);
 `;
 
 type SqlValue = number | string | Uint8Array | null;
@@ -203,6 +230,31 @@ try {
 
 raw.run('PRAGMA foreign_keys = ON');
 raw.exec(SCHEMA);
+
+/* ── 兼容旧库：补齐 P1 新增列，再建依赖列名的索引 ───────────── */
+
+function tableColumns(table: string): Set<string> {
+  const res = raw.exec(`PRAGMA table_info(${table})`);
+  const cols = new Set<string>();
+  if (res.length) {
+    const nameIndex = res[0].columns.indexOf('name');
+    for (const row of res[0].values) cols.add(String(row[nameIndex]));
+  }
+  return cols;
+}
+
+function ensureColumn(table: string, column: string, ddl: string): void {
+  if (!tableColumns(table).has(column)) raw.run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+
+ensureColumn('resume', 'parent_id', 'parent_id INTEGER');
+ensureColumn('application', 'next_action_at', 'next_action_at TEXT');
+ensureColumn('application', 'next_action_note', "next_action_note TEXT NOT NULL DEFAULT ''");
+
+raw.exec(`
+CREATE INDEX IF NOT EXISTS idx_resume_parent ON resume(parent_id);
+CREATE INDEX IF NOT EXISTS idx_application_next ON application(next_action_at);
+`);
 
 /* ── 落盘：防抖 + 原子替换 ───────────────────────────────── */
 

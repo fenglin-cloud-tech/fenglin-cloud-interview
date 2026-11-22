@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import type { Session } from '../types';
 import { formatDateTime } from '../lib/format';
-import { downloadText, slugDate } from '../lib/download';
+import { downloadFrom, downloadText, openPrintView, slugDate } from '../lib/download';
 import { Button, Card, Chip, CopyButton, ErrorState, PageSkeleton, ScoreRing } from '../components/ui';
 import { useApp } from '../state';
 
@@ -113,6 +113,12 @@ export function InterviewReport() {
           <CopyButton text={toMarkdown()} label="复制报告" />
           <Button size="sm" onClick={() => downloadText(`面试报告-${slugDate()}.md`, toMarkdown())}>
             下载 .md
+          </Button>
+          <Button size="sm" onClick={() => downloadFrom(`/api/interviews/${ivId}/report/docx`)}>
+            下载 Word
+          </Button>
+          <Button size="sm" onClick={() => openPrintView(`/print/interview/${ivId}`)}>
+            打印 / 存为 PDF
           </Button>
         </div>
       </div>

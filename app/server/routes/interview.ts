@@ -17,7 +17,9 @@ import {
 import type { DirectionKey } from '../common-questions.js';
 import { feedbackPrompt, questionPrompt, reportPrompt } from '../prompts.js';
 import { FOLLOWUP_THRESHOLD, analyzeAnswer, buildFallbackFollowup, calibrateScores } from '../scoring.js';
-import { HttpError, ah, idOf, str } from '../util.js';
+import { HttpError, ah, idOf, sendDocx, str } from '../util.js';
+import { buildDocx } from '../docx-export.js';
+import { createAiJob, failAiJob, finishAiJob, getAiJob, hasPendingAiJob } from '../ai-jobs.js';
 
 export const interviewRouter = Router();
 
@@ -55,26 +57,11 @@ interface TurnRow {
 
 /**
  * 单题反馈 / 面试报告都是长任务：网关约 30s 截断，不能继续在 HTTP 请求里同步等待。
- * 这里沿用 /ai/suggestions 的「202 + 轮询」模式；任务只保存在当前进程内存中，
- * 与当前单实例 SQLite 数据模型一致，重启后需要重新提交。
+ * 沿用「202 + 轮询」模式，任务状态落 ai_job 表（PERF-08），
+ * 实例重启后仍可继续轮询；仍按单实例设计，不承诺跨实例共享。
  */
-interface InterviewJob {
-  status: 'pending' | 'done' | 'error';
-  kind: 'answer' | 'finish';
-  startedAt: number;
-  interviewId: number;
-  result?: unknown;
-  error?: { code: string; message: string; detail?: string };
-}
-
-const interviewJobs = new Map<string, InterviewJob>();
-const INTERVIEW_JOB_TTL_MS = 10 * 60 * 1000;
-
-function sweepInterviewJobs(): void {
-  const now = Date.now();
-  for (const [jobId, job] of interviewJobs) {
-    if (now - job.startedAt > INTERVIEW_JOB_TTL_MS) interviewJobs.delete(jobId);
-  }
+function jobKindOf(interviewId: number, kind: 'answer' | 'finish'): string {
+  return `interview:${interviewId}:${kind}`;
 }
 
 function jobErrorOf(err: unknown): { code: string; message: string; detail?: string } {
@@ -88,25 +75,18 @@ function jobErrorOf(err: unknown): { code: string; message: string; detail?: str
   return { code: 'INTERNAL', message: '任务执行失败，请重试' };
 }
 
-function hasPendingJob(interviewId: number, kind: InterviewJob['kind']): boolean {
-  for (const job of interviewJobs.values()) {
-    if (job.interviewId === interviewId && job.kind === kind && job.status === 'pending') return true;
-  }
-  return false;
+function hasPendingJob(interviewId: number, kind: 'answer' | 'finish'): boolean {
+  return hasPendingAiJob(jobKindOf(interviewId, kind));
 }
 
-function startInterviewJob<T>(interviewId: number, kind: InterviewJob['kind'], task: () => Promise<T>): string {
-  sweepInterviewJobs();
+function startInterviewJob<T>(interviewId: number, kind: 'answer' | 'finish', task: () => Promise<T>): string {
   const jobId = randomUUID();
-  const job: InterviewJob = { status: 'pending', kind, startedAt: Date.now(), interviewId };
-  interviewJobs.set(jobId, job);
+  createAiJob(jobId, jobKindOf(interviewId, kind), { interviewId, kind });
   void (async () => {
     try {
-      job.result = await task();
-      job.status = 'done';
+      finishAiJob(jobId, await task());
     } catch (err) {
-      job.status = 'error';
-      job.error = jobErrorOf(err);
+      failAiJob(jobId, jobErrorOf(err));
     }
   })();
   return jobId;
@@ -334,7 +314,33 @@ interviewRouter.get('/common-questions', (_req, res) => {
   });
 });
 
-interviewRouter.get('/interviews', (_req, res) => {
+interviewRouter.get('/interviews', (req, res) => {
+  // 游标分页 + 状态/岗位/模式筛选；旧客户端不带参数时行为与原来的「最近 20 条」一致。
+  const status = str(req.query.status, 20).trim();
+  const mode = str(req.query.mode, 20).trim();
+  const jobId = req.query.jobId ? Number(req.query.jobId) : null;
+  const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+  const limitRaw = req.query.limit ? Number(req.query.limit) : 20;
+  const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 20;
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (status) {
+    conds.push('i.status = ?');
+    params.push(status);
+  }
+  if (mode) {
+    conds.push('i.mode = ?');
+    params.push(mode);
+  }
+  if (jobId) {
+    conds.push('i.job_id = ?');
+    params.push(jobId);
+  }
+  if (cursor) {
+    conds.push('i.id < ?');
+    params.push(cursor);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const rows = db
     .prepare(
       `SELECT i.*, j.title AS job_title, r.title AS resume_title,
@@ -342,15 +348,81 @@ interviewRouter.get('/interviews', (_req, res) => {
        FROM interview i
        LEFT JOIN job j ON j.id = i.job_id
        LEFT JOIN resume r ON r.id = i.resume_id
-       ORDER BY i.id DESC LIMIT 50`,
+       ${where}
+       ORDER BY i.id DESC LIMIT ?`,
     )
-    .all();
-  res.json({ interviews: rows });
+    .all(...params, limit);
+  const nextCursor = rows.length === limit ? (rows[rows.length - 1] as { id: number }).id : null;
+  res.json({ interviews: rows, nextCursor });
 });
 
 interviewRouter.get('/interviews/:id', (req, res) => {
   res.json(sessionPayload(idOf(req)));
 });
+
+/* FUNC-03：面试报告导出 Word（与前端 Markdown 同一口径，只读取已保存的报告） */
+interviewRouter.get(
+  '/interviews/:id/report/docx',
+  ah(async (req, res) => {
+    const id = idOf(req);
+    const iv = db.prepare('SELECT * FROM interview WHERE id = ?').get(id) as
+      | { id: number; status: string; report_json: string | null; started_at: string; job_id: number | null; resume_id: number | null }
+      | undefined;
+    if (!iv) throw new HttpError(404, '面试不存在');
+    if (!iv.report_json) throw new HttpError(400, '这场面试还没有生成报告');
+    const report = JSON.parse(iv.report_json) as {
+      overallScore: number;
+      summary: string;
+      roundScores: { round: string; score: number; comment: string }[];
+      weaknesses: string[];
+      reviewPoints: string[];
+    };
+    const job = iv.job_id
+      ? (db.prepare('SELECT title FROM job WHERE id = ?').get(iv.job_id) as { title: string } | undefined)
+      : undefined;
+    const resume = iv.resume_id
+      ? (db.prepare('SELECT title FROM resume WHERE id = ?').get(iv.resume_id) as { title: string } | undefined)
+      : undefined;
+    const turns = db
+      .prepare(
+        'SELECT question, answer, score, feedback_json FROM interview_turn WHERE interview_id = ? AND answer IS NOT NULL ORDER BY round_key, seq, id',
+      )
+      .all(id) as { question: string; answer: string; score: number | null; feedback_json: string | null }[];
+    const lines = [
+      '# 模拟面试报告',
+      '',
+      `- 岗位：${job?.title || '未关联'}`,
+      `- 简历：${resume?.title || '未关联'}`,
+      `- 时间：${iv.started_at}`,
+      `- 总分：${report.overallScore}`,
+      '',
+      '## 各轮得分',
+      ...report.roundScores.map((r) => `- ${r.round}：${r.score} 分 — ${r.comment}`),
+      '',
+      '## 薄弱环节',
+      ...report.weaknesses.map((w) => `- ${w}`),
+      '',
+      '## 建议复习点',
+      ...report.reviewPoints.map((r) => `- ${r}`),
+      '',
+      '## 总评',
+      report.summary,
+      '',
+      '## 问答记录',
+      ...turns.map((t, i) => {
+        let feedback = '';
+        try {
+          feedback = (JSON.parse(t.feedback_json || '{}') as { summary?: string }).summary || '';
+        } catch {
+          feedback = '';
+        }
+        return `### ${i + 1}. ${t.question}\n\n**我的回答**：${t.answer}\n\n**得分**：${t.score ?? '—'}\n\n**反馈**：${feedback}\n`;
+      }),
+    ];
+    const buffer = await buildDocx(`面试报告-${id}`, lines.join('\n'));
+    sendDocx(res, `面试报告-${id}.docx`, buffer);
+  }),
+);
 
 interviewRouter.post(
   '/interviews',
@@ -544,8 +616,11 @@ interviewRouter.post(
 
 interviewRouter.get('/interviews/:id/jobs/:jobId', (req, res) => {
   const id = idOf(req);
-  const job = interviewJobs.get(String(req.params.jobId));
-  if (!job || job.interviewId !== id) throw new HttpError(404, '任务不存在或已过期，请重新提交');
+  const job = getAiJob(String(req.params.jobId));
+  const payload = (job?.payload ?? {}) as { interviewId?: number };
+  if (!job || !job.kind.startsWith(`interview:${id}:`) || payload.interviewId !== id) {
+    throw new HttpError(404, '任务不存在或已过期，请重新提交');
+  }
   if (job.status === 'pending') {
     res.json({ status: 'pending' });
     return;

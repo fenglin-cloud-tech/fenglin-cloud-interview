@@ -52,6 +52,11 @@ export function clearDemo(): number {
   const banks = idsOf('bank');
   const applications = idsOf('application');
 
+  if (applications.length) {
+    db.prepare(
+      `DELETE FROM application_stage_log WHERE application_id IN (${applications.map(() => '?').join(', ')})`,
+    ).run(...applications);
+  }
   delByIds('application', 'id', applications);
   delByIds('interview_turn', 'interview_id', interviews);
   delByIds('interview', 'id', interviews);

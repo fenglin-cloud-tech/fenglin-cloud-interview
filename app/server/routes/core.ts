@@ -79,12 +79,16 @@ coreRouter.post('/resumes', (req, res) => {
   if (!title) throw new HttpError(400, '请填写简历标题');
   if (content.trim().length < 20) throw new HttpError(400, '简历内容太短（至少 20 字）');
   const jobId = body.jobId ? Number(body.jobId) : null;
+  const parentId = body.parentId ? Number(body.parentId) : null;
+  if (parentId && !db.prepare('SELECT id FROM resume WHERE id = ?').get(parentId)) {
+    throw new HttpError(404, '父版本简历不存在');
+  }
   const now = nowIso();
   const info = db
     .prepare(
-      'INSERT INTO resume (title, content, job_id, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO resume (title, content, job_id, parent_id, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(title, content, jobId, str(body.source, 20) || 'manual', now, now);
+    .run(title, content, jobId, parentId, str(body.source, 20) || 'manual', now, now);
   if (body.makeActive !== false) setSetting('active_resume_id', String(info.lastInsertRowid));
   res.status(201).json({ resume: resumeRow(Number(info.lastInsertRowid)) });
 });
@@ -209,6 +213,39 @@ coreRouter.put('/state', (req, res) => {
   });
 });
 
+/* ---------------- 启动聚合：首屏 5 个请求合并为 1 个 ---------------- */
+
+coreRouter.get('/bootstrap', (_req, res) => {
+  const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get();
+  const resumes = db
+    .prepare(
+      `SELECT r.*, j.title AS job_title,
+        (SELECT COUNT(*) FROM jd_analysis a WHERE a.resume_id = r.id) AS analysis_count,
+        (SELECT COUNT(*) FROM interview i WHERE i.resume_id = r.id) AS interview_count
+       FROM resume r LEFT JOIN job j ON j.id = r.job_id
+       ORDER BY r.updated_at DESC`,
+    )
+    .all();
+  const jobs = db
+    .prepare(
+      `SELECT j.*,
+        (SELECT COUNT(*) FROM resume r WHERE r.job_id = j.id) AS resume_count,
+        (SELECT COUNT(*) FROM interview i WHERE i.job_id = j.id) AS interview_count
+       FROM job j ORDER BY j.updated_at DESC`,
+    )
+    .all();
+  res.json({
+    profile,
+    resumes,
+    jobs,
+    activeResumeId: Number(getSetting('active_resume_id') || 0) || null,
+    activeJobId: Number(getSetting('active_job_id') || 0) || null,
+    aiConfigured: hasApiKey(),
+    sharedDemo: env.sharedDemo,
+    model: env.zhipuModel,
+  });
+});
+
 /* ---------------- 首页数据 ---------------- */
 
 coreRouter.get(
@@ -232,9 +269,21 @@ coreRouter.get(
          ORDER BY i.id DESC LIMIT 5`,
       )
       .all();
+    // 今日跟进：只取尚未结束的投递，按跟进日期升序；日期是本地 YYYY-MM-DD。
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const followUps = db
+      .prepare(
+        `SELECT id, company, title, stage, next_action_at, next_action_note
+         FROM application
+         WHERE next_action_at IS NOT NULL AND next_action_at <= ?
+           AND stage NOT IN ('offer', 'rejected', 'withdrawn')
+         ORDER BY next_action_at ASC, id ASC LIMIT 20`,
+      )
+      .all(todayStr);
     res.json({
       counts,
       recent,
+      followUps,
       activeResumeId: Number(getSetting('active_resume_id') || 0) || null,
       activeJobId: Number(getSetting('active_job_id') || 0) || null,
       aiConfigured: hasApiKey(),
@@ -298,8 +347,44 @@ function radarOf(points: GrowthPoint[]) {
   };
 }
 
+/**
+ * 成长聚合进程内缓存。
+ * key 取「已完成面试 / 逐题反馈 / 岗位标题」的最大版本标记：
+ * 面试结束、反馈写入、岗位改名都会让 key 变化，从而自动失效。
+ */
+type GrowthData = ReturnType<typeof buildGrowth>;
+let growthCache: { key: string; data: GrowthData } | null = null;
+
+function growthCacheKey(): string {
+  const iv = db
+    .prepare(
+      "SELECT COUNT(*) AS n, MAX(id) AS maxId, MAX(ended_at) AS maxEnded, MAX(overall_score) AS maxScore FROM interview WHERE status = 'finished'",
+    )
+    .get() as { n: number; maxId: number | null; maxEnded: string | null; maxScore: number | null };
+  const turns = db
+    .prepare(
+      `SELECT COUNT(*) AS n, MAX(t.id) AS maxTurn FROM interview_turn t
+       JOIN interview i ON i.id = t.interview_id
+       WHERE i.status = 'finished' AND t.answer IS NOT NULL AND t.feedback_json IS NOT NULL`,
+    )
+    .get() as { n: number; maxTurn: number | null };
+  const jobs = db.prepare('SELECT COUNT(*) AS n, MAX(updated_at) AS maxUpdated FROM job').get() as {
+    n: number;
+    maxUpdated: string | null;
+  };
+  return `${iv.n}|${iv.maxId ?? ''}|${iv.maxEnded ?? ''}|${iv.maxScore ?? ''}|${turns.n}|${turns.maxTurn ?? ''}|${jobs.n}|${jobs.maxUpdated ?? ''}`;
+}
+
+function buildGrowthCached(): GrowthData {
+  const key = growthCacheKey();
+  if (growthCache && growthCache.key === key) return growthCache.data;
+  const data = buildGrowth();
+  growthCache = { key, data };
+  return data;
+}
+
 coreRouter.get('/stats/growth', (_req, res) => {
-  res.json(buildGrowth());
+  res.json(buildGrowthCached());
 });
 
 function buildGrowth() {
@@ -404,7 +489,7 @@ coreRouter.get('/dossier', (_req, res) => {
     ? { ...parseJson<Record<string, unknown>>(matchRow.result_json, {}), created_at: matchRow.created_at }
     : null;
 
-  const growth = buildGrowth();
+  const growth = buildGrowthCached();
   const group =
     (job ? growth.groups.find((g) => g.jobId === job.id && g.count > 0) : null) ||
     growth.groups.find((g) => g.key === 'all') ||
@@ -483,3 +568,96 @@ coreRouter.get('/dossier', (_req, res) => {
     bank: { total: bankTotal, weak: weakTotal, items: weakItems },
   });
 });
+
+/* FUNC-04：求职档案导出 Word，与打印视图同口径，只读取本机真实记录 */
+coreRouter.get(
+  '/dossier/docx',
+  ah(async (_req, res) => {
+    ensureReviewTasks();
+    const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get() as Record<string, unknown>;
+    const activeResumeId = Number(getSetting('active_resume_id') || 0) || null;
+    const resume = (activeResumeId
+      ? db.prepare('SELECT title, content FROM resume WHERE id = ?').get(activeResumeId)
+      : db.prepare('SELECT title, content FROM resume ORDER BY updated_at DESC LIMIT 1').get()) as
+      | { title: string; content: string }
+      | undefined;
+    const job = (activeResumeId
+      ? db
+          .prepare(
+            'SELECT j.title, j.company, j.jd FROM job j JOIN resume r ON r.job_id = j.id WHERE r.id = ?',
+          )
+          .get(activeResumeId)
+      : db.prepare('SELECT title, company, jd FROM job ORDER BY updated_at DESC LIMIT 1').get()) as
+      | { title: string; company: string; jd: string }
+      | undefined;
+    const latest = db
+      .prepare(
+        "SELECT report_json FROM interview WHERE status = 'finished' AND report_json IS NOT NULL ORDER BY started_at DESC, id DESC LIMIT 1",
+      )
+      .get() as { report_json: string } | undefined;
+    const report = latest ? parseJson<Record<string, unknown> | null>(latest.report_json, null) : null;
+    const finishedTotal = (
+      db.prepare("SELECT COUNT(*) AS n FROM interview WHERE status = 'finished'").get() as { n: number }
+    ).n;
+    const reviewTotal = (db.prepare('SELECT COUNT(*) AS n FROM review').get() as { n: number }).n;
+    const bankTotal = (db.prepare('SELECT COUNT(*) AS n FROM bank_item').get() as { n: number }).n;
+    const weakTotal = (db.prepare('SELECT COUNT(*) AS n FROM bank_item WHERE weak = 1').get() as { n: number }).n;
+    const weakItems = db
+      .prepare(
+        'SELECT question, category, last_score FROM bank_item WHERE weak = 1 ORDER BY (last_score IS NULL), last_score ASC, id DESC LIMIT 10',
+      )
+      .all() as { question: string; category: string; last_score: number | null }[];
+
+    const lines = [
+      '# 求职档案',
+      '',
+      `> 生成时间：${nowIso()}`,
+      '',
+      '## 基本档案',
+      `- 昵称：${profile.nickname || '—'}`,
+      `- 学校：${profile.school || '—'}`,
+      `- 专业：${profile.major || '—'}`,
+      `- 年级：${profile.grade || '—'}`,
+      '',
+      '## 当前简历',
+      resume ? `### ${resume.title}\n\n${resume.content}` : '（暂无简历）',
+      '',
+      '## 目标岗位',
+      job ? `### ${job.company || '—'} · ${job.title}\n\n${job.jd || '（JD 为空）'}` : '（暂无岗位）',
+      '',
+      '## 最近一次面试报告',
+      report
+        ? [
+            `- 总分：${String(report.overallScore ?? '—')}`,
+            '',
+            ...(((report.roundScores as { round: string; score: number; comment: string }[]) || []).map(
+              (r) => `- ${r.round}：${r.score} 分 — ${r.comment}`,
+            )),
+            '',
+            '### 薄弱环节',
+            ...(((report.weaknesses as string[]) || []).map((w) => `- ${w}`)),
+            '',
+            '### 建议复习点',
+            ...(((report.reviewPoints as string[]) || []).map((r) => `- ${r}`)),
+            '',
+            '### 总评',
+            String(report.summary || ''),
+          ].join('\n')
+        : '（暂无已完成的面试报告）',
+      '',
+      '## 训练统计',
+      `- 完成面试：${finishedTotal} 场`,
+      `- 复盘记录：${reviewTotal} 条`,
+      `- 题库题目：${bankTotal} 道（薄弱 ${weakTotal} 道）`,
+      '',
+      '## 薄弱题',
+      weakItems.length
+        ? weakItems
+            .map((b) => `- [${b.category}] ${b.question}${b.last_score != null ? `（上次 ${b.last_score} 分）` : ''}`)
+            .join('\n')
+        : '（暂无薄弱题）',
+    ];
+    const buffer = await buildDocx('求职档案', lines.join('\n'));
+    sendDocx(res, `求职档案-${new Date().toISOString().slice(0, 10)}.docx`, buffer);
+  }),
+);

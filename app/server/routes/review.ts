@@ -35,15 +35,55 @@ reviewRouter.post('/review-plan/:kind/:refId/result', (req, res) => {
 
 reviewRouter.get('/reviews', (req, res) => {
   const q = str(req.query.q, 100).trim();
+  const jobId = req.query.jobId ? Number(req.query.jobId) : null;
+  const rating = req.query.rating ? Number(req.query.rating) : null;
+  const tag = str(req.query.tag, 40).trim();
+  const from = str(req.query.from, 10).trim();
+  const to = str(req.query.to, 10).trim();
+  const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+  const limitRaw = req.query.limit ? Number(req.query.limit) : 50;
+  const limit = Number.isInteger(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 50;
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (q) {
+    conds.push('(rv.question LIKE ? OR rv.improvement LIKE ?)');
+    params.push(`%${q}%`, `%${q}%`);
+  }
+  if (jobId) {
+    conds.push('rv.job_id = ?');
+    params.push(jobId);
+  }
+  if (rating && rating >= 1 && rating <= 5) {
+    conds.push('rv.rating = ?');
+    params.push(rating);
+  }
+  if (tag) {
+    conds.push('rv.tags LIKE ?');
+    params.push(`%${tag}%`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    conds.push('rv.created_at >= ?');
+    params.push(`${from}T00:00:00.000Z`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    conds.push('rv.created_at <= ?');
+    params.push(`${to}T23:59:59.999Z`);
+  }
+  if (cursor) {
+    conds.push('rv.id < ?');
+    params.push(cursor);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const rows = db
     .prepare(
       `SELECT rv.*, j.title AS job_title
        FROM review rv LEFT JOIN job j ON j.id = rv.job_id
-       ${q ? 'WHERE rv.question LIKE ? OR rv.improvement LIKE ?' : ''}
-       ORDER BY rv.id DESC LIMIT 200`,
+       ${where}
+       ORDER BY rv.id DESC LIMIT ?`,
     )
-    .all(...(q ? [`%${q}%`, `%${q}%`] : []));
-  res.json({ reviews: rows });
+    .all(...params, limit);
+  const nextCursor = rows.length === limit ? (rows[rows.length - 1] as { id: number }).id : null;
+  res.json({ reviews: rows, nextCursor });
 });
 
 /** 兼容旧库：review 表按需补 job_id 列 */
@@ -83,9 +123,10 @@ reviewRouter.put('/reviews/:id', (req, res) => {
   if (!existing) throw new HttpError(404, '复盘记录不存在');
   const body = req.body ?? {};
   db.prepare(
-    'UPDATE review SET question = ?, my_answer = ?, performance = ?, improvement = ?, rating = ?, tags = ? WHERE id = ?',
+    'UPDATE review SET question = ?, job_id = ?, my_answer = ?, performance = ?, improvement = ?, rating = ?, tags = ? WHERE id = ?',
   ).run(
     body.question !== undefined ? str(body.question, 500).trim() : String(existing.question),
+    body.jobId !== undefined ? (body.jobId ? Number(body.jobId) : null) : (existing.job_id as number | null),
     body.myAnswer !== undefined ? str(body.myAnswer, 6000) : String(existing.my_answer),
     body.performance !== undefined ? str(body.performance, 4000) : String(existing.performance),
     body.improvement !== undefined ? str(body.improvement, 4000) : String(existing.improvement),
@@ -158,6 +199,10 @@ reviewRouter.get('/bank', (req, res) => {
   const category = str(req.query.category, 40).trim();
   const onlyWeak = req.query.weak === '1';
   const jobId = req.query.jobId ? Number(req.query.jobId) : null;
+  const q = str(req.query.q, 100).trim();
+  const cursor = req.query.cursor ? Number(req.query.cursor) : null;
+  const limitRaw = req.query.limit ? Number(req.query.limit) : 50;
+  const limit = Number.isInteger(limitRaw) ? Math.min(300, Math.max(1, limitRaw)) : 50;
   const conds: string[] = [];
   const params: unknown[] = [];
   if (category) {
@@ -169,6 +214,14 @@ reviewRouter.get('/bank', (req, res) => {
     conds.push('b.job_id = ?');
     params.push(jobId);
   }
+  if (q) {
+    conds.push('b.question LIKE ?');
+    params.push(`%${q}%`);
+  }
+  if (cursor) {
+    conds.push('b.id < ?');
+    params.push(cursor);
+  }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   ensureReviewTasks();
   const items = db
@@ -176,9 +229,10 @@ reviewRouter.get('/bank', (req, res) => {
       `SELECT b.*, t.due_at AS next_review_at, t.stage AS review_stage
        FROM bank_item b
        LEFT JOIN review_task t ON t.kind = 'bank' AND t.ref_id = b.id
-       ${where} ORDER BY b.weak DESC, b.id DESC LIMIT 300`,
+       ${where} ORDER BY b.weak DESC, b.id DESC LIMIT ?`,
     )
-    .all(...params);
+    .all(...params, limit);
+  const nextCursor = items.length === limit ? (items[items.length - 1] as { id: number }).id : null;
   const facet = db.prepare('SELECT category, COUNT(*) AS n FROM bank_item GROUP BY category').all() as {
     category: string;
     n: number;
@@ -188,6 +242,7 @@ reviewRouter.get('/bank', (req, res) => {
     .get() as { total: number; weakCount: number | null; asks: number | null };
   res.json({
     items,
+    nextCursor,
     facets: facet,
     totals: { total: totals.total, weak: totals.weakCount ?? 0, asks: totals.asks ?? 0 },
   });
@@ -228,6 +283,9 @@ reviewRouter.patch('/bank/:id', (req, res) => {
   if (body.question !== undefined) {
     const q = str(body.question, 500).trim();
     if (q) db.prepare('UPDATE bank_item SET question = ? WHERE id = ?').run(q, id);
+  }
+  if (body.jobId !== undefined) {
+    db.prepare('UPDATE bank_item SET job_id = ? WHERE id = ?').run(body.jobId ? Number(body.jobId) : null, id);
   }
   res.json({ item: db.prepare('SELECT * FROM bank_item WHERE id = ?').get(id) });
 });

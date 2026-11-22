@@ -19,6 +19,8 @@ interface ApplicationRow {
   applied_on: string;
   stage: Stage;
   note: string;
+  next_action_at: string | null;
+  next_action_note: string;
   created_at: string;
   updated_at: string;
   job_title?: string | null;
@@ -51,13 +53,15 @@ function parseBody(body: unknown) {
   const appliedOn = dateOf(b.appliedOn);
   const stage = stageOf(b.stage);
   const note = str(b.note, 5000);
+  const nextActionAt = b.nextActionAt ? dateOf(b.nextActionAt) : null;
+  const nextActionNote = str(b.nextActionNote, 500);
   let jobId: number | null = null;
   if (b.jobId !== null && b.jobId !== undefined && b.jobId !== '') {
     jobId = Number(b.jobId);
     if (!Number.isInteger(jobId) || jobId < 1) throw new HttpError(400, '目标岗位不合法');
     if (!db.prepare('SELECT id FROM job WHERE id = ?').get(jobId)) throw new HttpError(404, '目标岗位不存在');
   }
-  return { company, title, appliedOn, stage, note, jobId };
+  return { company, title, appliedOn, stage, note, nextActionAt, nextActionNote, jobId };
 }
 
 function appById(id: number): ApplicationRow & { job_title: string | null } {
@@ -104,6 +108,28 @@ function detailOf(app: ApplicationRow & { job_title?: string | null }) {
         )
         .all(...reviewIds) as { id: number; question: string; rating: number; created_at: string }[])
     : [];
+  const stageLog = (
+    db
+      .prepare(
+        `SELECT id, application_id, from_stage, to_stage, note, changed_at
+         FROM application_stage_log WHERE application_id = ? ORDER BY changed_at ASC, id ASC`,
+      )
+      .all(app.id) as {
+      id: number;
+      application_id: number;
+      from_stage: Stage | null;
+      to_stage: Stage;
+      note: string;
+      changed_at: string;
+    }[]
+  ).map((l) => ({
+    id: l.id,
+    applicationId: l.application_id,
+    fromStage: l.from_stage,
+    toStage: l.to_stage,
+    note: l.note,
+    changedAt: l.changed_at,
+  }));
   return {
     id: app.id,
     company: app.company,
@@ -113,8 +139,11 @@ function detailOf(app: ApplicationRow & { job_title?: string | null }) {
     appliedOn: app.applied_on,
     stage: app.stage,
     note: app.note,
+    nextActionAt: app.next_action_at || null,
+    nextActionNote: app.next_action_note || '',
     createdAt: app.created_at,
     updatedAt: app.updated_at,
+    stageLog,
     links: { interviews, reviews },
   };
 }
@@ -148,13 +177,21 @@ applicationsRouter.get(
     }
     const interviews = db
       .prepare(
-        `SELECT i.id, i.started_at, i.ended_at, i.overall_score, i.mode, i.status
+        `SELECT i.id, i.started_at, i.ended_at, i.overall_score, i.mode, i.status, i.job_id
          FROM interview i ORDER BY i.started_at DESC LIMIT 100`,
       )
-      .all() as { id: number; started_at: string; ended_at: string | null; overall_score: number | null }[];
+      .all() as {
+      id: number;
+      started_at: string;
+      ended_at: string | null;
+      overall_score: number | null;
+      mode: string;
+      status: string;
+      job_id: number | null;
+    }[];
     const reviews = db
-      .prepare('SELECT id, question, rating, created_at FROM review ORDER BY created_at DESC LIMIT 100')
-      .all() as { id: number; question: string; rating: number; created_at: string }[];
+      .prepare('SELECT id, question, rating, created_at, job_id FROM review ORDER BY created_at DESC LIMIT 100')
+      .all() as { id: number; question: string; rating: number; created_at: string; job_id: number | null }[];
     res.json({
       application: detailOf(app),
       options: {
@@ -172,10 +209,24 @@ applicationsRouter.post(
     const now = nowIso();
     const r = db
       .prepare(
-        `INSERT INTO application (company, title, job_id, applied_on, stage, note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO application (company, title, job_id, applied_on, stage, note, next_action_at, next_action_note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(p.company, p.title, p.jobId, p.appliedOn, p.stage, p.note, now, now);
+      .run(
+        p.company,
+        p.title,
+        p.jobId,
+        p.appliedOn,
+        p.stage,
+        p.note,
+        p.nextActionAt,
+        p.nextActionNote,
+        now,
+        now,
+      );
+    db.prepare(
+      'INSERT INTO application_stage_log (application_id, from_stage, to_stage, note, changed_at) VALUES (?, NULL, ?, ?, ?)',
+    ).run(r.lastInsertRowid, p.stage, '创建投递', now);
     res.json({ application: detailOf(appById(r.lastInsertRowid)) });
   }),
 );
@@ -184,12 +235,30 @@ applicationsRouter.put(
   '/applications/:id',
   ah(async (req, res) => {
     const id = Number(req.params.id);
-    appById(id);
+    const before = appById(id);
     const p = parseBody(req.body);
+    const now = nowIso();
     db.prepare(
-      `UPDATE application SET company = ?, title = ?, job_id = ?, applied_on = ?, stage = ?, note = ?, updated_at = ?
-       WHERE id = ?`,
-    ).run(p.company, p.title, p.jobId, p.appliedOn, p.stage, p.note, nowIso(), id);
+      `UPDATE application SET company = ?, title = ?, job_id = ?, applied_on = ?, stage = ?, note = ?,
+       next_action_at = ?, next_action_note = ?, updated_at = ? WHERE id = ?`,
+    ).run(
+      p.company,
+      p.title,
+      p.jobId,
+      p.appliedOn,
+      p.stage,
+      p.note,
+      p.nextActionAt,
+      p.nextActionNote,
+      now,
+      id,
+    );
+    // 只有阶段真正变化才追加历史，避免每次编辑都写一条噪音。
+    if (before.stage !== p.stage) {
+      db.prepare(
+        'INSERT INTO application_stage_log (application_id, from_stage, to_stage, note, changed_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(id, before.stage, p.stage, '', now);
+    }
     res.json({ application: detailOf(appById(id)) });
   }),
 );
@@ -199,6 +268,8 @@ applicationsRouter.delete(
   ah(async (req, res) => {
     const id = Number(req.params.id);
     appById(id);
+    db.prepare('DELETE FROM application_stage_log WHERE application_id = ?').run(id);
+    db.prepare('DELETE FROM application_link WHERE application_id = ?').run(id);
     db.prepare('DELETE FROM application WHERE id = ?').run(id);
     res.json({ ok: true });
   }),

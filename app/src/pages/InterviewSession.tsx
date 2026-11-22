@@ -101,6 +101,7 @@ export function InterviewSession() {
   const [timer, setTimer] = useState<{ turnId: number; startedAt: number } | null>(null);
   const [timedOutEmpty, setTimedOutEmpty] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [expandedTurns, setExpandedTurns] = useState<number[]>([]);
   const answerRef = useRef(answer);
   answerRef.current = answer;
   const timeoutRef = useRef<number | null>(null);
@@ -365,6 +366,40 @@ export function InterviewSession() {
                     {t.feedback?.issues?.length ? (
                       <div className="turn-issue">待改：{t.feedback.issues[0]}</div>
                     ) : null}
+                    {t.feedback && (
+                      <div className="turn-feedback-detail">
+                        <button
+                          className="link-btn"
+                          aria-expanded={expandedTurns.includes(t.id)}
+                          onClick={() =>
+                            setExpandedTurns((prev) =>
+                              prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id],
+                            )
+                          }
+                        >
+                          {expandedTurns.includes(t.id) ? '收起完整反馈' : '查看完整反馈'}
+                        </button>
+                        {expandedTurns.includes(t.id) && (
+                          <div className="turn-feedback-body">
+                            <div className="turn-meta">
+                              <span>结构 {t.feedback.scores.structure}</span>
+                              <span>内容 {t.feedback.scores.content}</span>
+                              <span>表达 {t.feedback.scores.expression}</span>
+                            </div>
+                            <p>{t.feedback.summary}</p>
+                            {t.feedback.strengths.length > 0 && (
+                              <p className="muted small">亮点：{t.feedback.strengths.join('；')}</p>
+                            )}
+                            {t.feedback.issues.length > 0 && (
+                              <p className="muted small">待改：{t.feedback.issues.join('；')}</p>
+                            )}
+                            {t.feedback.improvedAnswer && (
+                              <p className="muted small">改进示例：{t.feedback.improvedAnswer}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

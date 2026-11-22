@@ -15,6 +15,7 @@ const COUNT_LABEL: Record<string, string> = {
   reviewTasks: '复习排程',
   applications: '投递记录',
   applicationLinks: '投递关联',
+  applicationStageLog: '投递阶段历史',
 };
 
 const MAX_IMPORT_BYTES = 8 * 1024 * 1024;

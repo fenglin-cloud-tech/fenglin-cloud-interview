@@ -12,6 +12,7 @@ export interface Resume {
   title: string;
   content: string;
   job_id: number | null;
+  parent_id?: number | null;
   job_title?: string | null;
   source: 'manual' | 'template' | 'ai' | string;
   created_at: string;
@@ -188,6 +189,15 @@ export type ApplicationStage =
   | 'rejected'
   | 'withdrawn';
 
+export interface ApplicationStageLog {
+  id: number;
+  applicationId: number;
+  fromStage: ApplicationStage | null;
+  toStage: ApplicationStage;
+  note: string;
+  changedAt: string;
+}
+
 export interface ApplicationRecord {
   id: number;
   company: string;
@@ -197,8 +207,11 @@ export interface ApplicationRecord {
   appliedOn: string;
   stage: ApplicationStage;
   note: string;
+  nextActionAt: string | null;
+  nextActionNote: string;
   createdAt: string;
   updatedAt: string;
+  stageLog: ApplicationStageLog[];
   links: {
     interviews: {
       id: number;

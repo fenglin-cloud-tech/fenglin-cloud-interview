@@ -69,18 +69,29 @@ function needsAiConsent(path: string): boolean {
   return /^\/interviews\/\d+\/(answer|finish)$/.test(path);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** 普通请求默认 20s 超时；长任务已改为 202 + 轮询，不再占用单个请求。 */
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+async function request<T>(path: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   if (needsAiConsent(path) && !hasAiConsent()) {
     throw new ApiError(428, '首次使用 AI 前，请先在页面顶部阅读并同意数据外发提示', 'AI_CONSENT_REQUIRED');
   }
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      signal: controller.signal,
     });
   } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, '请求超时，请检查网络后重试', 'TIMEOUT');
+    }
     throw new ApiError(0, '无法连接服务端，请确认后端已启动（npm run dev）', 'NETWORK');
+  } finally {
+    window.clearTimeout(timer);
   }
   const text = await res.text();
   let body: unknown = null;
@@ -109,6 +120,18 @@ export const api = {
     request<{ ok: boolean; model: string; aiConfigured: boolean; sharedDemo: boolean }>('/health'),
   aiStatus: () => request<{ configured: boolean }>('/ai/status'),
 
+  bootstrap: () =>
+    request<{
+      profile: Profile;
+      resumes: Resume[];
+      jobs: Job[];
+      activeResumeId: number | null;
+      activeJobId: number | null;
+      aiConfigured: boolean;
+      sharedDemo: boolean;
+      model: string;
+    }>('/bootstrap'),
+
   profile: () => request<{ profile: Profile }>('/profile'),
   saveProfile: (body: Partial<Profile>) => put<{ profile: Profile }>('/profile', body),
 
@@ -132,6 +155,14 @@ export const api = {
         overall_score: number | null;
         job_title: string | null;
         answered: number;
+      }[];
+      followUps: {
+        id: number;
+        company: string;
+        title: string;
+        stage: string;
+        next_action_at: string;
+        next_action_note: string;
       }[];
       activeResumeId: number | null;
       activeJobId: number | null;
@@ -183,8 +214,13 @@ export const api = {
     put<{ activeResumeId: number | null; activeJobId: number | null }>('/state', body),
 
   resumes: () => request<{ resumes: Resume[] }>('/resumes'),
-  createResume: (body: { title: string; content: string; jobId?: number | null; source?: string }) =>
-    post<{ resume: Resume }>('/resumes', body),
+  createResume: (body: {
+    title: string;
+    content: string;
+    jobId?: number | null;
+    parentId?: number | null;
+    source?: string;
+  }) => post<{ resume: Resume }>('/resumes', body),
   updateResume: (id: number, body: { title?: string; content?: string; jobId?: number | null }) =>
     put<{ resume: Resume }>(`/resumes/${id}`, body),
   deleteResume: (id: number) => del<{ ok: boolean }>(`/resumes/${id}`),
@@ -206,9 +242,17 @@ export const api = {
           overall_score: number | null;
           mode: string;
           status: string;
+          job_id: number | null;
           linkedApplicationId: number | null;
         }[];
-        reviews: { id: number; question: string; rating: number; created_at: string; linkedApplicationId: number | null }[];
+        reviews: {
+          id: number;
+          question: string;
+          rating: number;
+          created_at: string;
+          job_id: number | null;
+          linkedApplicationId: number | null;
+        }[];
       };
     }>(`/applications/${id}`),
   createApplication: (body: {
@@ -218,10 +262,21 @@ export const api = {
     appliedOn: string;
     stage: ApplicationStage;
     note?: string;
+    nextActionAt?: string | null;
+    nextActionNote?: string;
   }) => post<{ application: ApplicationRecord }>('/applications', body),
   updateApplication: (
     id: number,
-    body: { company: string; title: string; jobId?: number | null; appliedOn: string; stage: ApplicationStage; note?: string },
+    body: {
+      company: string;
+      title: string;
+      jobId?: number | null;
+      appliedOn: string;
+      stage: ApplicationStage;
+      note?: string;
+      nextActionAt?: string | null;
+      nextActionNote?: string;
+    },
   ) => put<{ application: ApplicationRecord }>(`/applications/${id}`, body),
   deleteApplication: (id: number) => del<{ ok: boolean }>(`/applications/${id}`),
   linkApplication: (id: number, kind: 'interview' | 'review', refId: number) =>
@@ -245,8 +300,16 @@ export const api = {
     }>(`/ai/suggestions/${jobId}`),
   jdMatch: (body: { resumeText: string; jd: string; resumeId?: number | null; jobId?: number | null }) =>
     post<{ result: JdMatchResult; meta: LlmMeta; savedId: number | null }>('/ai/jd-match', body),
-  jdAnalyses: (resumeId?: number | null) =>
-    request<{ analyses: JdAnalysisRecord[] }>(`/jd-analyses${resumeId ? `?resumeId=${resumeId}` : ''}`),
+  jdAnalyses: (resumeId?: number | null, cursor?: number | null, limit?: number) => {
+    const sp = new URLSearchParams();
+    if (resumeId) sp.set('resumeId', String(resumeId));
+    if (cursor) sp.set('cursor', String(cursor));
+    if (limit) sp.set('limit', String(limit));
+    const qs = sp.toString();
+    return request<{ analyses: JdAnalysisRecord[]; nextCursor: number | null }>(
+      `/jd-analyses${qs ? `?${qs}` : ''}`,
+    );
+  },
   iterate: (body: {
     resumeText: string;
     currentResume: string;
@@ -269,7 +332,18 @@ export const api = {
       note?: string;
     }>('/ai/parse-resume-image', body),
 
-  interviews: () => request<{ interviews: InterviewListItem[] }>('/interviews'),
+  interviews: (params?: { status?: string; mode?: string; jobId?: number | null; cursor?: number | null; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.mode) sp.set('mode', params.mode);
+    if (params?.jobId) sp.set('jobId', String(params.jobId));
+    if (params?.cursor) sp.set('cursor', String(params.cursor));
+    if (params?.limit) sp.set('limit', String(params.limit));
+    const qs = sp.toString();
+    return request<{ interviews: InterviewListItem[]; nextCursor: number | null }>(
+      `/interviews${qs ? `?${qs}` : ''}`,
+    );
+  },
   commonQuestions: () =>
     request<{
       source: string;
@@ -299,7 +373,28 @@ export const api = {
     post<{ jobId: string; status: 'pending' } | FinishJobResult>(`/interviews/${id}/finish`),
   deleteInterview: (id: number) => del<{ ok: boolean }>(`/interviews/${id}`),
 
-  reviews: (q?: string) => request<{ reviews: ReviewItem[] }>(`/reviews${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  reviews: (params?: {
+    q?: string;
+    jobId?: number | null;
+    rating?: number | null;
+    tag?: string;
+    from?: string;
+    to?: string;
+    cursor?: number | null;
+    limit?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    if (params?.q) sp.set('q', params.q);
+    if (params?.jobId) sp.set('jobId', String(params.jobId));
+    if (params?.rating) sp.set('rating', String(params.rating));
+    if (params?.tag) sp.set('tag', params.tag);
+    if (params?.from) sp.set('from', params.from);
+    if (params?.to) sp.set('to', params.to);
+    if (params?.cursor) sp.set('cursor', String(params.cursor));
+    if (params?.limit) sp.set('limit', String(params.limit));
+    const qs = sp.toString();
+    return request<{ reviews: ReviewItem[]; nextCursor: number | null }>(`/reviews${qs ? `?${qs}` : ''}`);
+  },
   createReview: (body: {
     question: string;
     myAnswer?: string;
@@ -313,20 +408,39 @@ export const api = {
   }) => post<{ review: ReviewItem }>('/reviews', body),
   updateReview: (
     id: number,
-    body: { question?: string; myAnswer?: string; performance?: string; improvement?: string; rating?: number; tags?: string },
+    body: {
+      question?: string;
+      jobId?: number | null;
+      myAnswer?: string;
+      performance?: string;
+      improvement?: string;
+      rating?: number;
+      tags?: string;
+    },
   ) => put<{ review: ReviewItem }>(`/reviews/${id}`, body),
   deleteReview: (id: number) => del<{ ok: boolean }>(`/reviews/${id}`),
   exportReviews: () => request<{ markdown: string; count: number }>('/reviews/export'),
   reviewFromInterview: (id: number) => post<{ created: number }>(`/reviews/from-interview/${id}`),
 
-  bank: (params?: { category?: string; weak?: boolean; jobId?: number | null }) => {
+  bank: (params?: {
+    category?: string;
+    weak?: boolean;
+    jobId?: number | null;
+    q?: string;
+    cursor?: number | null;
+    limit?: number;
+  }) => {
     const sp = new URLSearchParams();
     if (params?.category) sp.set('category', params.category);
     if (params?.weak) sp.set('weak', '1');
     if (params?.jobId) sp.set('jobId', String(params.jobId));
+    if (params?.q) sp.set('q', params.q);
+    if (params?.cursor) sp.set('cursor', String(params.cursor));
+    if (params?.limit) sp.set('limit', String(params.limit));
     const qs = sp.toString();
     return request<{
       items: BankItem[];
+      nextCursor: number | null;
       facets: { category: string; n: number }[];
       totals: { total: number; weak: number; asks: number };
     }>(`/bank${qs ? `?${qs}` : ''}`);
@@ -338,7 +452,7 @@ export const api = {
     weak?: boolean;
     source?: string;
   }) => post<{ item: BankItem }>('/bank', body),
-  updateBankItem: (id: number, body: { weak?: boolean; category?: string; question?: string }) =>
+  updateBankItem: (id: number, body: { weak?: boolean; category?: string; question?: string; jobId?: number | null }) =>
     patch<{ item: BankItem }>(`/bank/${id}`, body),
   deleteBankItem: (id: number) => del<{ ok: boolean }>(`/bank/${id}`),
 

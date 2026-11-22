@@ -7483,3 +7483,17 @@ select.input {
     flex-direction: column;
   }
 }
+
+/* UX-14：移动端粘性操作条（桌面端不改变现有布局） */
+@media (max-width: 720px) {
+  .answer-bar,
+  .wb-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    background: var(--bg, #fff);
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line, #e5e0d8);
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
+  }
+}
