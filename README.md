@@ -2,7 +2,7 @@
 
 面向大学生的求职陪练 Web 应用：把「简历优化 → JD 匹配 → 从简历生成面试追问 → 模拟面试 → 复盘沉淀 → 题库再练」串成一条闭环。
 
-- 在线体验（公开，无需登录）：https://37kt7qk05rsihxps0fr.traesite.cn
+- 在线体验（公开，无需登录）：https://fenglin-cloud-interview.traesite.cn/
 - 参赛赛道：TRAE 大学生大赛 · 校园生活
 - 代码目录：`app/`；交付文档：`2026-11-20/fenglin-mianshi/outputs/`
 

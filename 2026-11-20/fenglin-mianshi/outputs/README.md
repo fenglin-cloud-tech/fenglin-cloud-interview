@@ -4,7 +4,7 @@
 
 它把「简历优化 → JD 匹配 → 从简历生成面试追问 → 模拟面试 → 复盘沉淀 → 题库再练」串成一条闭环，解决两个具体问题：简历和目标岗位对不上、面试缺乏针对自己简历的练习。
 
-- **在线体验（公开，无需登录）**：https://37kt7qk05rsihxps0fr.traesite.cn
+- **在线体验（公开，无需登录）**：https://fenglin-cloud-interview.traesite.cn/
 - 代码目录：`e:\Trae\fenglin-cloud-interview\app`
 - 说明与素材：`e:\Trae\fenglin-cloud-interview\2026-11-20\fenglin-mianshi\`
   - `work/`：设计过程、截图、测试脚本与日志
